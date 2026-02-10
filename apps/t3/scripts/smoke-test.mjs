@@ -285,6 +285,14 @@ async function main() {
         "Smoke test failed: expected cache-control=no-store on HEAD missing asset response.",
       );
     }
+    if ((headMissingAsset.headers.get("x-content-type-options") ?? "").toLowerCase() !== "nosniff") {
+      throw new Error("Smoke test failed: expected nosniff on HEAD missing asset response.");
+    }
+    if ((headMissingAsset.headers.get("x-frame-options") ?? "").toUpperCase() !== "DENY") {
+      throw new Error(
+        "Smoke test failed: expected x-frame-options=DENY on HEAD missing asset response.",
+      );
+    }
     const postPage = await fetch(parsedAppUrl, {
       method: "POST",
       body: "noop",
@@ -344,6 +352,21 @@ async function main() {
           headPage.headers.get("cache-control"),
         )}.`,
       );
+    }
+    if ((headPage.headers.get("x-content-type-options") ?? "").toLowerCase() !== "nosniff") {
+      throw new Error("Smoke test failed: expected nosniff on HEAD app response.");
+    }
+    if ((headPage.headers.get("x-frame-options") ?? "").toUpperCase() !== "DENY") {
+      throw new Error("Smoke test failed: expected x-frame-options=DENY on HEAD app response.");
+    }
+    if ((headPage.headers.get("referrer-policy") ?? "").toLowerCase() !== "no-referrer") {
+      throw new Error("Smoke test failed: expected referrer-policy=no-referrer on HEAD app response.");
+    }
+    if ((headPage.headers.get("cross-origin-resource-policy") ?? "").toLowerCase() !== "same-origin") {
+      throw new Error("Smoke test failed: expected CORP header on HEAD app response.");
+    }
+    if ((headPage.headers.get("cross-origin-opener-policy") ?? "").toLowerCase() !== "same-origin") {
+      throw new Error("Smoke test failed: expected COOP header on HEAD app response.");
     }
     const headContentLength = Number(headPage.headers.get("content-length") ?? "0");
     if (!Number.isFinite(headContentLength) || headContentLength <= 0) {
