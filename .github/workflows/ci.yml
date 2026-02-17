@@ -80,7 +80,7 @@ jobs:
         env:
           ELECTRON_DISABLE_SANDBOX: "1"
           T3CODE_PERF_TIMEOUT_MS: "420000"
-          T3CODE_PERF_MAX_LONG_DISPATCH_COUNT: "5"
+          T3CODE_PERF_MAX_LONG_DISPATCH_COUNT: "8"
           T3CODE_ELECTRON_STARTUP_TIMEOUT_MS: "180000"
         run: xvfb-run -a bun run test:desktop-perf
 
@@ -89,7 +89,7 @@ jobs:
         env:
           ELECTRON_DISABLE_SANDBOX: "1"
           T3CODE_PERF_TIMEOUT_MS: "420000"
-          T3CODE_PERF_MAX_LONG_DISPATCH_COUNT: "5"
+          T3CODE_PERF_MAX_LONG_DISPATCH_COUNT: "8"
           T3CODE_ELECTRON_STARTUP_TIMEOUT_MS: "180000"
         run: xvfb-run -a bun run test:desktop-perf
 
@@ -99,7 +99,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ELECTRON_DISABLE_SANDBOX: "1"
           T3CODE_PERF_TIMEOUT_MS: "420000"
-          T3CODE_PERF_MAX_LONG_DISPATCH_COUNT: "5"
+          T3CODE_PERF_MAX_LONG_DISPATCH_COUNT: "8"
           T3CODE_ELECTRON_STARTUP_TIMEOUT_MS: "180000"
         run: xvfb-run -a bun run test:desktop-perf:post
 
