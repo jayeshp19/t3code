@@ -17,9 +17,16 @@ export function useMediaQuery(query: string): boolean {
     };
 
     setMatches(mediaQueryList.matches);
-    mediaQueryList.addEventListener("change", handleChange);
+
+    if (mediaQueryList.addEventListener) {
+      mediaQueryList.addEventListener("change", handleChange);
+      return () => {
+        mediaQueryList.removeEventListener("change", handleChange);
+      };
+    }
+    mediaQueryList.addListener(handleChange);
     return () => {
-      mediaQueryList.removeEventListener("change", handleChange);
+      mediaQueryList.removeListener(handleChange);
     };
   }, [query]);
 
