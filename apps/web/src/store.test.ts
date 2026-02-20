@@ -1,4 +1,4 @@
-import type { ProviderEvent, ProviderSession, TerminalEvent } from "@t3tools/contracts";
+import type { ProviderEvent, ProviderSession, StateEvent, TerminalEvent } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import { type AppState, reducer } from "./store";
@@ -566,7 +566,7 @@ describe("store reducer thread continuity", () => {
 
     const next = reducer(state, {
       type: "APPLY_STATE_EVENT",
-      event: {
+      event: ({
         seq: 1,
         eventType: "thread.upsert",
         entityId: "thread-local-1",
@@ -598,7 +598,7 @@ describe("store reducer thread continuity", () => {
             turnDiffSummaries: [],
           },
         },
-      },
+      } as unknown as StateEvent),
     });
 
     expect(next.threads[0]?.turnDiffSummaries.map((summary) => summary.turnId)).toEqual(["turn-1"]);
@@ -626,33 +626,35 @@ describe("store reducer thread continuity", () => {
       }),
     );
 
-    const next = reducer(state, {
-      type: "APPLY_STATE_EVENT",
-      event: {
-        seq: 1,
-        eventType: "thread.upsert",
-        entityId: "thread-local-1",
-        createdAt: "2026-02-09T00:00:06.000Z",
-        payload: {
-          thread: {
-            id: "thread-local-1",
-            codexThreadId: "thr-1",
-            projectId: "project-1",
-            title: "Thread",
-            model: "gpt-5.3-codex",
-            terminalOpen: true,
-            terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
-            activeTerminalId: "term-2",
-            activeTerminalGroupId: "group-term-2",
-            createdAt: "2026-02-09T00:00:00.000Z",
-            updatedAt: "2026-02-09T00:00:06.000Z",
-            lastVisitedAt: "2026-02-09T00:00:06.000Z",
-            branch: null,
-            worktreePath: null,
-            turnDiffSummaries: [],
-          },
+    const malformedStateEvent = ({
+      seq: 1,
+      eventType: "thread.upsert",
+      entityId: "thread-local-1",
+      createdAt: "2026-02-09T00:00:06.000Z",
+      payload: {
+        thread: {
+          id: "thread-local-1",
+          codexThreadId: "thr-1",
+          projectId: "project-1",
+          title: "Thread",
+          model: "gpt-5.3-codex",
+          terminalOpen: true,
+          terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
+          activeTerminalId: "term-2",
+          activeTerminalGroupId: "group-term-2",
+          createdAt: "2026-02-09T00:00:00.000Z",
+          updatedAt: "2026-02-09T00:00:06.000Z",
+          lastVisitedAt: "2026-02-09T00:00:06.000Z",
+          branch: null,
+          worktreePath: null,
+          turnDiffSummaries: [],
         },
       },
+    } as unknown) as StateEvent;
+
+    const next = reducer(state, {
+      type: "APPLY_STATE_EVENT",
+      event: malformedStateEvent,
     });
 
     expect(next.threads[0]?.terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID, "term-2"]);
@@ -674,7 +676,7 @@ describe("store reducer thread continuity", () => {
 
     const next = reducer(state, {
       type: "APPLY_STATE_EVENT",
-      event: {
+      event: ({
         seq: 1,
         eventType: "thread.upsert",
         entityId: "thread-local-2",
@@ -696,7 +698,7 @@ describe("store reducer thread continuity", () => {
             turnDiffSummaries: [],
           },
         },
-      },
+      } as unknown as StateEvent),
     });
 
     const createdThread = next.threads.find((thread) => thread.id === "thread-local-2");

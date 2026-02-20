@@ -38,7 +38,7 @@
         "@effect/sql-sqlite-node": "^4.0.0-beta.6",
         "@pierre/diffs": "^1.1.0-beta.16",
         "effect": "^4.0.0-beta.6",
-        "node-pty": "^1.1.0",
+        "node-pty": "1.1.0",
         "open": "^10.1.0",
         "ws": "^8.18.0",
       },

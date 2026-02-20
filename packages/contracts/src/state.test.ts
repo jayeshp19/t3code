@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   stateBootstrapResultSchema,
   stateCatchUpInputSchema,
+  stateEventSchema,
   stateListMessagesInputSchema,
   stateListMessagesResultSchema,
   stateMessageSchema,
@@ -116,5 +117,29 @@ describe("state schemas", () => {
   it("parses state catch-up payloads", () => {
     const catchUp = stateCatchUpInputSchema.parse({});
     expect(catchUp.afterSeq).toBe(0);
+  });
+
+  it("validates typed state event payload variants", () => {
+    const event = stateEventSchema.parse({
+      seq: 1,
+      eventType: "project.upsert",
+      entityId: "project-1",
+      payload: {
+        project: {
+          id: "project-1",
+          cwd: "/repo",
+          name: "repo",
+          scripts: [],
+          createdAt: "2026-02-19T00:00:00.000Z",
+          updatedAt: "2026-02-19T00:00:00.000Z",
+        },
+      },
+      createdAt: "2026-02-19T00:00:00.000Z",
+    });
+
+    expect(event.eventType).toBe("project.upsert");
+    if (event.eventType === "project.upsert") {
+      expect(event.payload.project.id).toBe("project-1");
+    }
   });
 });

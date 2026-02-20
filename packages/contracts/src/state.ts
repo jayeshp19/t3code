@@ -103,13 +103,82 @@ export const stateCatchUpInputSchema = z.object({
   afterSeq: z.number().int().min(0).default(0),
 });
 
-export const stateEventSchema = z.object({
+const stateEventBaseSchema = z.object({
   seq: z.number().int().positive(),
-  eventType: z.string().min(1),
   entityId: z.string().min(1),
-  payload: z.unknown(),
   createdAt: z.string().datetime(),
 });
+
+export const stateProjectUpsertPayloadSchema = z.object({
+  project: stateProjectSchema,
+});
+
+export const stateProjectDeletePayloadSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+export const stateThreadUpsertPayloadSchema = z.object({
+  thread: stateThreadSchema,
+});
+
+export const stateThreadDeletePayloadSchema = z.object({
+  threadId: z.string().min(1),
+});
+
+export const stateMessageUpsertPayloadSchema = z.object({
+  threadId: z.string().min(1),
+  message: stateMessageSchema,
+});
+
+export const stateMessageDeletePayloadSchema = z.object({
+  threadId: z.string().min(1),
+  messageId: z.string().min(1),
+});
+
+export const stateTurnSummaryUpsertPayloadSchema = z.object({
+  threadId: z.string().min(1),
+  turnSummary: stateTurnSummarySchema,
+});
+
+export const stateTurnSummaryDeletePayloadSchema = z.object({
+  threadId: z.string().min(1),
+  turnId: z.string().min(1),
+});
+
+export const stateEventSchema = z.discriminatedUnion("eventType", [
+  stateEventBaseSchema.extend({
+    eventType: z.literal("project.upsert"),
+    payload: stateProjectUpsertPayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("project.delete"),
+    payload: stateProjectDeletePayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("thread.upsert"),
+    payload: stateThreadUpsertPayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("thread.delete"),
+    payload: stateThreadDeletePayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("message.upsert"),
+    payload: stateMessageUpsertPayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("message.delete"),
+    payload: stateMessageDeletePayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("turn_summary.upsert"),
+    payload: stateTurnSummaryUpsertPayloadSchema,
+  }),
+  stateEventBaseSchema.extend({
+    eventType: z.literal("turn_summary.delete"),
+    payload: stateTurnSummaryDeletePayloadSchema,
+  }),
+]);
 
 export const stateCatchUpResultSchema = z.object({
   events: z.array(stateEventSchema),
@@ -204,6 +273,14 @@ export type StateThread = z.infer<typeof stateThreadSchema>;
 export type StateBootstrapThread = z.infer<typeof stateBootstrapThreadSchema>;
 export type StateBootstrapResult = z.infer<typeof stateBootstrapResultSchema>;
 export type StateCatchUpInput = z.input<typeof stateCatchUpInputSchema>;
+export type StateProjectUpsertPayload = z.infer<typeof stateProjectUpsertPayloadSchema>;
+export type StateProjectDeletePayload = z.infer<typeof stateProjectDeletePayloadSchema>;
+export type StateThreadUpsertPayload = z.infer<typeof stateThreadUpsertPayloadSchema>;
+export type StateThreadDeletePayload = z.infer<typeof stateThreadDeletePayloadSchema>;
+export type StateMessageUpsertPayload = z.infer<typeof stateMessageUpsertPayloadSchema>;
+export type StateMessageDeletePayload = z.infer<typeof stateMessageDeletePayloadSchema>;
+export type StateTurnSummaryUpsertPayload = z.infer<typeof stateTurnSummaryUpsertPayloadSchema>;
+export type StateTurnSummaryDeletePayload = z.infer<typeof stateTurnSummaryDeletePayloadSchema>;
 export type StateEvent = z.infer<typeof stateEventSchema>;
 export type StateCatchUpResult = z.infer<typeof stateCatchUpResultSchema>;
 export type StateListMessagesInput = z.input<typeof stateListMessagesInputSchema>;

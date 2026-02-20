@@ -575,209 +575,158 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case "APPLY_STATE_EVENT": {
-      const payload = asObject(action.event.payload);
-      const eventType = action.event.eventType;
-
-      if (eventType === "project.upsert") {
-        const project = asObject(payload?.project);
-        const id = asString(project?.id);
-        const name = asString(project?.name);
-        const cwd = asString(project?.cwd);
-        const scripts = Array.isArray(project?.scripts) ? (project.scripts as ProjectScript[]) : [];
-        if (!id || !name || !cwd) {
-          return state;
+      switch (action.event.eventType) {
+        case "project.upsert": {
+          const project = action.event.payload.project;
+          const previous = state.projects.find((entry) => entry.id === project.id);
+          const nextProject: Project = {
+            id: project.id,
+            name: project.name,
+            cwd: project.cwd,
+            model: resolveModelSlug(previous?.model ?? DEFAULT_MODEL),
+            expanded: previous?.expanded ?? true,
+            scripts: normalizeProjectScripts(project.scripts),
+          };
+          const nextProjects = previous
+            ? state.projects.map((entry) => (entry.id === project.id ? nextProject : entry))
+            : [...state.projects, nextProject];
+          return {
+            ...state,
+            projects: nextProjects,
+          };
         }
-        const previous = state.projects.find((entry) => entry.id === id);
-        const nextProject: Project = {
-          id,
-          name,
-          cwd,
-          model: resolveModelSlug(previous?.model ?? DEFAULT_MODEL),
-          expanded: previous?.expanded ?? true,
-          scripts: normalizeProjectScripts(scripts),
-        };
-        const nextProjects = previous
-          ? state.projects.map((entry) => (entry.id === id ? nextProject : entry))
-          : [...state.projects, nextProject];
-        return {
-          ...state,
-          projects: nextProjects,
-        };
-      }
-
-      if (eventType === "project.delete") {
-        const projectId = asString(payload?.projectId) ?? action.event.entityId;
-        const projects = state.projects.filter((project) => project.id !== projectId);
-        const threads = state.threads.filter((thread) => thread.projectId !== projectId);
-        const diffState = resetDiffTargetIfMissing(state, threads);
-        return {
-          ...state,
-          projects,
-          threads,
-          ...diffState,
-        };
-      }
-
-      if (eventType === "thread.upsert") {
-        const threadPayload = asObject(payload?.thread);
-        const threadId = asString(threadPayload?.id);
-        const projectId = asString(threadPayload?.projectId);
-        if (!threadId || !projectId) {
-          return state;
+        case "project.delete": {
+          const projectId = action.event.payload.projectId;
+          const projects = state.projects.filter((project) => project.id !== projectId);
+          const threads = state.threads.filter((thread) => thread.projectId !== projectId);
+          const diffState = resetDiffTargetIfMissing(state, threads);
+          return {
+            ...state,
+            projects,
+            threads,
+            ...diffState,
+          };
         }
-        if (!state.projects.some((project) => project.id === projectId)) {
-          return state;
+        case "thread.upsert": {
+          const threadPayload = action.event.payload.thread as Partial<StateBootstrapThread> &
+            Pick<
+              StateBootstrapThread,
+              "id" | "projectId" | "title" | "model" | "createdAt" | "updatedAt"
+            >;
+          const threadId = threadPayload.id;
+          const projectId = threadPayload.projectId;
+          if (!state.projects.some((project) => project.id === projectId)) {
+            return state;
+          }
+
+          const existing = state.threads.find((thread) => thread.id === threadId);
+          const existingStateMessages =
+            existing?.messages.map((message) => ({
+              id: message.id,
+              threadId,
+              role: message.role,
+              text: message.text,
+              ...(message.attachments
+                ? {
+                    attachments: message.attachments.map((attachment) => ({ ...attachment })),
+                  }
+                : {}),
+              createdAt: message.createdAt,
+              updatedAt: message.createdAt,
+              streaming: message.streaming,
+            })) ?? [];
+          const payloadTurnDiffSummaries = Array.isArray(threadPayload.turnDiffSummaries)
+            ? (threadPayload.turnDiffSummaries as Thread["turnDiffSummaries"])
+            : undefined;
+          const payloadTerminalIds = Array.isArray(threadPayload.terminalIds)
+            ? (threadPayload.terminalIds as string[])
+            : (existing?.terminalIds ?? [DEFAULT_THREAD_TERMINAL_ID]);
+          const payloadRunningTerminalIds = Array.isArray(threadPayload.runningTerminalIds)
+            ? (threadPayload.runningTerminalIds as string[])
+            : (existing?.runningTerminalIds ?? []);
+          const payloadTerminalGroups = Array.isArray(threadPayload.terminalGroups)
+            ? (threadPayload.terminalGroups as ThreadTerminalGroup[])
+            : (existing?.terminalGroups ?? []);
+          const bootstrapThread: StateBootstrapThread = {
+            ...(threadPayload as unknown as Omit<StateBootstrapThread, "messages">),
+            terminalIds: payloadTerminalIds,
+            runningTerminalIds: payloadRunningTerminalIds,
+            terminalGroups: payloadTerminalGroups,
+            messages: existingStateMessages,
+            turnDiffSummaries: payloadTurnDiffSummaries
+              ? mergeTurnDiffSummaries(existing?.turnDiffSummaries ?? [], payloadTurnDiffSummaries)
+              : existing?.turnDiffSummaries ?? [],
+          };
+          const nextThread = hydrateThreadFromBootstrap(bootstrapThread, existing);
+          const nextThreads = existing
+            ? state.threads.map((thread) => (thread.id === nextThread.id ? nextThread : thread))
+            : [...state.threads, nextThread];
+          return {
+            ...state,
+            threads: nextThreads,
+          };
         }
-
-        const existing = state.threads.find((thread) => thread.id === threadId);
-        const existingStateMessages =
-          existing?.messages.map((message) => ({
-            id: message.id,
-            threadId,
-            role: message.role,
-            text: message.text,
-            ...(message.attachments
-              ? {
-                  attachments: message.attachments.map((attachment) => ({ ...attachment })),
-                }
-              : {}),
-            createdAt: message.createdAt,
-            updatedAt: message.createdAt,
-            streaming: message.streaming,
-          })) ?? [];
-        const payloadTurnDiffSummaries = Array.isArray(threadPayload?.turnDiffSummaries)
-          ? (threadPayload.turnDiffSummaries as Thread["turnDiffSummaries"])
-          : undefined;
-        const payloadTerminalIds = Array.isArray(threadPayload?.terminalIds)
-          ? (threadPayload.terminalIds as string[])
-          : (existing?.terminalIds ?? [DEFAULT_THREAD_TERMINAL_ID]);
-        const payloadRunningTerminalIds = Array.isArray(threadPayload?.runningTerminalIds)
-          ? (threadPayload.runningTerminalIds as string[])
-          : (existing?.runningTerminalIds ?? []);
-        const payloadTerminalGroups = Array.isArray(threadPayload?.terminalGroups)
-          ? (threadPayload.terminalGroups as ThreadTerminalGroup[])
-          : (existing?.terminalGroups ?? []);
-        const bootstrapThread: StateBootstrapThread = {
-          ...(threadPayload as unknown as Omit<StateBootstrapThread, "messages">),
-          terminalIds: payloadTerminalIds,
-          runningTerminalIds: payloadRunningTerminalIds,
-          terminalGroups: payloadTerminalGroups,
-          messages: existingStateMessages,
-          turnDiffSummaries: payloadTurnDiffSummaries
-            ? mergeTurnDiffSummaries(existing?.turnDiffSummaries ?? [], payloadTurnDiffSummaries)
-            : existing?.turnDiffSummaries ?? [],
-        };
-        const nextThread = hydrateThreadFromBootstrap(bootstrapThread, existing);
-        const nextThreads = existing
-          ? state.threads.map((thread) => (thread.id === nextThread.id ? nextThread : thread))
-          : [...state.threads, nextThread];
-        return {
-          ...state,
-          threads: nextThreads,
-        };
-      }
-
-      if (eventType === "thread.delete") {
-        const threadId = asString(payload?.threadId) ?? action.event.entityId;
-        const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
-        const diffState = resetDiffTargetIfMissing(state, nextThreads);
-        return {
-          ...state,
-          threads: nextThreads,
-          ...diffState,
-        };
-      }
-
-      if (eventType === "message.upsert") {
-        const threadId = asString(payload?.threadId);
-        const messagePayload = asObject(payload?.message);
-        const messageId = asString(messagePayload?.id);
-        const role = messagePayload?.role === "assistant" ? "assistant" : "user";
-        const text = typeof messagePayload?.text === "string" ? messagePayload.text : "";
-        const createdAt = asString(messagePayload?.createdAt);
-        if (!threadId || !messageId || !createdAt) {
-          return state;
+        case "thread.delete": {
+          const threadId = action.event.payload.threadId;
+          const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
+          const diffState = resetDiffTargetIfMissing(state, nextThreads);
+          return {
+            ...state,
+            threads: nextThreads,
+            ...diffState,
+          };
         }
-        const attachments = Array.isArray(messagePayload?.attachments)
-          ? (messagePayload.attachments as Thread["messages"][number]["attachments"])
-          : undefined;
-        return {
-          ...state,
-          threads: updateThread(state.threads, threadId, (thread) => ({
-            ...thread,
-            messages: upsertThreadMessage(thread.messages, {
-              id: messageId,
-              role,
-              text,
-              ...(attachments ? { attachments } : {}),
-              createdAt,
-              streaming: messagePayload?.streaming === true,
-            }),
-          })),
-        };
-      }
-
-      if (eventType === "message.delete") {
-        const threadId = asString(payload?.threadId);
-        const messageId = asString(payload?.messageId);
-        if (!threadId || !messageId) {
-          return state;
+        case "message.upsert": {
+          const { threadId, message: messagePayload } = action.event.payload;
+          const attachments = messagePayload.attachments as
+            | Thread["messages"][number]["attachments"]
+            | undefined;
+          return {
+            ...state,
+            threads: updateThread(state.threads, threadId, (thread) => ({
+              ...thread,
+              messages: upsertThreadMessage(thread.messages, {
+                id: messagePayload.id,
+                role: messagePayload.role,
+                text: messagePayload.text,
+                ...(attachments ? { attachments } : {}),
+                createdAt: messagePayload.createdAt,
+                streaming: messagePayload.streaming,
+              }),
+            })),
+          };
         }
-        return {
-          ...state,
-          threads: updateThread(state.threads, threadId, (thread) => ({
-            ...thread,
-            messages: thread.messages.filter((message) => message.id !== messageId),
-          })),
-        };
-      }
-
-      if (eventType === "turn_summary.upsert") {
-        const threadId = asString(payload?.threadId);
-        const summaryPayload = asObject(payload?.turnSummary);
-        const turnId = asString(summaryPayload?.turnId);
-        const completedAt = asString(summaryPayload?.completedAt);
-        if (!threadId || !turnId || !completedAt) {
-          return state;
+        case "message.delete": {
+          const { threadId, messageId } = action.event.payload;
+          return {
+            ...state,
+            threads: updateThread(state.threads, threadId, (thread) => ({
+              ...thread,
+              messages: thread.messages.filter((message) => message.id !== messageId),
+            })),
+          };
         }
-        const summary: Thread["turnDiffSummaries"][number] = {
-          turnId,
-          completedAt,
-          status: asString(summaryPayload?.status),
-          files: Array.isArray(summaryPayload?.files)
-            ? (summaryPayload.files as Thread["turnDiffSummaries"][number]["files"])
-            : [],
-          assistantMessageId: asString(summaryPayload?.assistantMessageId),
-          checkpointTurnCount:
-            typeof summaryPayload?.checkpointTurnCount === "number"
-              ? summaryPayload.checkpointTurnCount
-              : undefined,
-        };
-        return {
-          ...state,
-          threads: updateThread(state.threads, threadId, (thread) => ({
-            ...thread,
-            turnDiffSummaries: mergeTurnDiffSummaries(thread.turnDiffSummaries, [summary]),
-          })),
-        };
-      }
-
-      if (eventType === "turn_summary.delete") {
-        const threadId = asString(payload?.threadId);
-        const turnId = asString(payload?.turnId);
-        if (!threadId || !turnId) {
-          return state;
+        case "turn_summary.upsert": {
+          const { threadId, turnSummary } = action.event.payload;
+          return {
+            ...state,
+            threads: updateThread(state.threads, threadId, (thread) => ({
+              ...thread,
+              turnDiffSummaries: mergeTurnDiffSummaries(thread.turnDiffSummaries, [turnSummary]),
+            })),
+          };
         }
-        return {
-          ...state,
-          threads: updateThread(state.threads, threadId, (thread) => ({
-            ...thread,
-            turnDiffSummaries: thread.turnDiffSummaries.filter((summary) => summary.turnId !== turnId),
-          })),
-        };
+        case "turn_summary.delete": {
+          const { threadId, turnId } = action.event.payload;
+          return {
+            ...state,
+            threads: updateThread(state.threads, threadId, (thread) => ({
+              ...thread,
+              turnDiffSummaries: thread.turnDiffSummaries.filter((summary) => summary.turnId !== turnId),
+            })),
+          };
+        }
       }
-
-      return state;
     }
 
     case "ADD_PROJECT":
