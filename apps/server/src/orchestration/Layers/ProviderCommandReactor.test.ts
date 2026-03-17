@@ -357,9 +357,25 @@ describe("ProviderCommandReactor", () => {
 
     await Effect.runPromise(
       harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.makeUnsafe("cmd-thread-create-claude"),
+        threadId: ThreadId.makeUnsafe("thread-claude"),
+        projectId: asProjectId("project-1"),
+        title: "Claude Thread",
+        model: "claude-sonnet-4-6",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.makeUnsafe("cmd-turn-start-claude-effort"),
-        threadId: ThreadId.makeUnsafe("thread-1"),
+        threadId: ThreadId.makeUnsafe("thread-claude"),
         message: {
           messageId: asMessageId("user-message-claude-effort"),
           role: "user",
@@ -391,7 +407,7 @@ describe("ProviderCommandReactor", () => {
       },
     });
     expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
-      threadId: ThreadId.makeUnsafe("thread-1"),
+      threadId: ThreadId.makeUnsafe("thread-claude"),
       model: "claude-sonnet-4-6",
       modelOptions: {
         claudeAgent: {
@@ -587,9 +603,25 @@ describe("ProviderCommandReactor", () => {
 
     await Effect.runPromise(
       harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.makeUnsafe("cmd-thread-create-claude-restart"),
+        threadId: ThreadId.makeUnsafe("thread-claude-restart"),
+        projectId: asProjectId("project-1"),
+        title: "Claude Restart Thread",
+        model: "claude-sonnet-4-6",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.makeUnsafe("cmd-turn-start-claude-effort-1"),
-        threadId: ThreadId.makeUnsafe("thread-1"),
+        threadId: ThreadId.makeUnsafe("thread-claude-restart"),
         message: {
           messageId: asMessageId("user-message-claude-effort-1"),
           role: "user",
@@ -616,7 +648,7 @@ describe("ProviderCommandReactor", () => {
       harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.makeUnsafe("cmd-turn-start-claude-effort-2"),
-        threadId: ThreadId.makeUnsafe("thread-1"),
+        threadId: ThreadId.makeUnsafe("thread-claude-restart"),
         message: {
           messageId: asMessageId("user-message-claude-effort-2"),
           role: "user",
