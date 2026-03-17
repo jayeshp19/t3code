@@ -44,59 +44,53 @@ export class StartupError extends Data.TaggedError("StartupError")<{
   readonly cause?: unknown;
 }> {}
 
-const AllowedHost = Schema.String.pipe(
-  Schema.decodeTo(
-    Schema.String,
-    SchemaTransformation.transformOrFail({
-      decode: (input) => {
-        const candidate = input.trim();
-        const invalidHostIssue = new SchemaIssue.InvalidValue(Option.some(input), {
-          message: `Invalid host "${input}". Expected bare host[:port], for example "app.example" or "app.example:443".`,
-        });
+const invalidAllowedHostIssue = (input: string) =>
+  new SchemaIssue.InvalidValue(Option.some(input), {
+    message: `Invalid host "${input}". Expected bare host[:port], for example "app.example" or "app.example:443".`,
+  });
 
-        if (candidate.length === 0 || candidate.includes("://")) {
-          return Effect.fail(invalidHostIssue);
+const AllowedHost = Schema.Trim.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (input) => {
+        if (input.length === 0 || input.includes("://")) {
+          return invalidAllowedHostIssue(input);
         }
 
-        const candidateUrl = `http://${candidate}`;
+        const candidateUrl = `http://${input}`;
         if (!URL.canParse(candidateUrl)) {
-          return Effect.fail(invalidHostIssue);
+          return invalidAllowedHostIssue(input);
         }
 
         const parsed = new URL(candidateUrl);
-        if (
-          parsed.username ||
+        return parsed.username ||
           parsed.password ||
           parsed.pathname !== "/" ||
           parsed.search ||
           parsed.hash
-        ) {
-          return Effect.fail(invalidHostIssue);
-        }
-
-        return Effect.succeed(parsed.host.toLowerCase());
+          ? invalidAllowedHostIssue(input)
+          : true;
       },
-      encode: (input) => Effect.succeed(input),
-    }),
+      { identifier: "AllowedHost" },
+    ),
   ),
+  Schema.decodeTo(Schema.String, SchemaTransformation.toLowerCase()),
 );
 
 const AllowedHostsCsv = Schema.String.pipe(
   Schema.decodeTo(
     Schema.Array(AllowedHost),
-    SchemaTransformation.transformOrFail({
-      decode: (input) =>
-        Effect.succeed(
-          Array.from(
-            new Set(
-              input
-                .split(",")
-                .map((entry) => entry.trim())
-                .filter((entry) => entry.length > 0),
-            ),
+    SchemaTransformation.transform({
+      decode: (input): readonly string[] =>
+        Array.from(
+          new Set(
+            input
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter((entry) => entry.length > 0),
           ),
         ),
-      encode: (input: readonly string[]) => Effect.succeed(input.join(", ")),
+      encode: (input: readonly string[]) => input.join(", "),
     }),
   ),
 );
