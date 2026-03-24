@@ -537,44 +537,36 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             });
           }
 
-          const projects: ReadonlyArray<OrchestrationProject> = yield* Effect.forEach(
-            projectRows,
-            (row) =>
-              Effect.succeed({
-                id: row.projectId,
-                title: row.title,
-                workspaceRoot: row.workspaceRoot,
-                defaultModelSelection: row.defaultModelSelection,
-                scripts: row.scripts,
-                createdAt: row.createdAt,
-                updatedAt: row.updatedAt,
-                deletedAt: row.deletedAt,
-              }),
-          );
+          const projects: ReadonlyArray<OrchestrationProject> = projectRows.map((row) => ({
+            id: row.projectId,
+            title: row.title,
+            workspaceRoot: row.workspaceRoot,
+            defaultModelSelection: row.defaultModelSelection,
+            scripts: row.scripts,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+          }));
 
-          const threads: ReadonlyArray<OrchestrationThread> = yield* Effect.forEach(
-            threadRows,
-            (row) =>
-              Effect.succeed({
-                id: row.threadId,
-                projectId: row.projectId,
-                title: row.title,
-                modelSelection: row.modelSelection,
-                runtimeMode: row.runtimeMode,
-                interactionMode: row.interactionMode,
-                branch: row.branch,
-                worktreePath: row.worktreePath,
-                latestTurn: latestTurnByThread.get(row.threadId) ?? null,
-                createdAt: row.createdAt,
-                updatedAt: row.updatedAt,
-                deletedAt: row.deletedAt,
-                messages: messagesByThread.get(row.threadId) ?? [],
-                proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
-                activities: activitiesByThread.get(row.threadId) ?? [],
-                checkpoints: checkpointsByThread.get(row.threadId) ?? [],
-                session: sessionsByThread.get(row.threadId) ?? null,
-              }),
-          );
+          const threads: ReadonlyArray<OrchestrationThread> = threadRows.map((row) => ({
+            id: row.threadId,
+            projectId: row.projectId,
+            title: row.title,
+            modelSelection: row.modelSelection,
+            runtimeMode: row.runtimeMode,
+            interactionMode: row.interactionMode,
+            branch: row.branch,
+            worktreePath: row.worktreePath,
+            latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+            messages: messagesByThread.get(row.threadId) ?? [],
+            proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
+            activities: activitiesByThread.get(row.threadId) ?? [],
+            checkpoints: checkpointsByThread.get(row.threadId) ?? [],
+            session: sessionsByThread.get(row.threadId) ?? null,
+          }));
 
           const snapshot = {
             snapshotSequence: computeSnapshotSequence(stateRows),
