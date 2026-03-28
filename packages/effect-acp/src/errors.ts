@@ -22,8 +22,8 @@ export class AcpProcessExitedError extends Schema.TaggedErrorClass<AcpProcessExi
 ) {
   override get message() {
     return this.code === undefined
-      ? "ACP process exited unexpectedly"
-      : `ACP process exited unexpectedly with code ${this.code}`;
+      ? "ACP process exited"
+      : `ACP process exited with code ${this.code}`;
   }
 }
 

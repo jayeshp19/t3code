@@ -5,6 +5,15 @@ const rl = createInterface({
   crlfDelay: Infinity,
 });
 
+if (process.env.ACP_MOCK_MALFORMED_OUTPUT === "1") {
+  process.stdout.write("{not-json}\n");
+  process.exit(Number(process.env.ACP_MOCK_MALFORMED_OUTPUT_EXIT_CODE ?? "0"));
+}
+
+if (process.env.ACP_MOCK_EXIT_IMMEDIATELY_CODE !== undefined) {
+  process.exit(Number(process.env.ACP_MOCK_EXIT_IMMEDIATELY_CODE));
+}
+
 let nextRequestId = 1000;
 const pending = new Map<
   number | string,

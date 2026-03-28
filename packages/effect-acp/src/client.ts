@@ -284,6 +284,15 @@ export const fromChildProcess = Effect.fnUntraced(function* (
   const handlers = options.handlers ?? {};
   const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
     stdio: makeStdioFromChildProcess(handle),
+    processExit: handle.exitCode.pipe(
+      Effect.map(Number),
+      Effect.mapError(
+        (cause) =>
+          new AcpError.AcpProcessExitedError({
+            cause,
+          }),
+      ),
+    ),
     serverRequestMethods: new Set(AcpRpcs.ClientRpcs.requests.keys()),
     ...(options.logIncoming !== undefined ? { logIncoming: options.logIncoming } : {}),
     ...(options.logOutgoing !== undefined ? { logOutgoing: options.logOutgoing } : {}),
