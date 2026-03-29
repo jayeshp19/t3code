@@ -23,7 +23,16 @@ import {
 } from "@t3tools/contracts";
 import { applyClaudePromptEffortPrefix, normalizeModelSlug } from "@t3tools/shared/model";
 import { truncate } from "@t3tools/shared/String";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -175,7 +184,6 @@ import {
   readFileAsDataUrl,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
-  SendPhase,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 
@@ -330,9 +338,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [localDraftErrorsByThreadId, setLocalDraftErrorsByThreadId] = useState<
     Record<ThreadId, string | null>
   >({});
-  const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
-  const [sendStartedAt, setSendStartedAt] = useState<string | null>(null);
-  const [isConnecting, _setIsConnecting] = useState(false);
+  const [isSendPending, startSendTransition] = useTransition();
+  const sendStartedAtRef = useRef<string | null>(null);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
@@ -664,14 +671,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const selectedModelForPicker = selectedModel;
   const phase = derivePhase(activeThread?.session ?? null);
-  const isSendBusy = sendPhase !== "idle";
-  const isPreparingWorktree = sendPhase === "preparing-worktree";
-  const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const [optimisticPhase, setOptimisticPhase] = useOptimistic(phase);
+  const isSendBusy = isSendPending;
+  const isPreparingWorktree = createWorktreeMutation.isPending;
+  const isWorking = optimisticPhase === "running" || isRevertingCheckpoint;
   const nowIso = new Date(nowTick).toISOString();
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
-    sendStartedAt,
+    sendStartedAtRef.current,
   );
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(
@@ -2020,8 +2028,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       return [];
     });
-    setSendPhase("idle");
-    setSendStartedAt(null);
+    sendStartedAtRef.current = null;
     setComposerHighlightedItemId(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
@@ -2152,71 +2159,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
       : "local";
 
   useEffect(() => {
-    if (phase !== "running" && sendPhase === "idle") return;
+    if (optimisticPhase !== "running") return;
     const timer = window.setInterval(() => {
       setNowTick(Date.now());
     }, 1000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [phase, sendPhase]);
-
-  const turnIdAtSendRef = useRef<string | null>(null);
-
-  const beginSendPhase = useCallback(
-    (nextPhase: Exclude<SendPhase, "idle">) => {
-      setSendStartedAt((current) => current ?? new Date().toISOString());
-      turnIdAtSendRef.current = activeLatestTurn?.turnId ?? null;
-      setSendPhase(nextPhase);
-    },
-    [activeLatestTurn?.turnId],
-  );
-
-  const resetSendPhase = useCallback(() => {
-    setSendPhase("idle");
-    setSendStartedAt(null);
-    turnIdAtSendRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    if (sendPhase === "idle") {
-      return;
-    }
-    if (
-      phase === "running" ||
-      activePendingApproval !== null ||
-      activePendingUserInput !== null ||
-      activeThread?.error
-    ) {
-      resetSendPhase();
-    }
-  }, [
-    activePendingApproval,
-    activePendingUserInput,
-    activeThread?.error,
-    phase,
-    resetSendPhase,
-    sendPhase,
-  ]);
-
-  // Fallback: if the "running" phase transition was missed (e.g. due to React
-  // batching two snapshots, a WebSocket reconnect, or a very fast turn), the
-  // primary auto-reset above never fires and sendPhase stays stuck.  Detect
-  // this by checking whether the turn has settled while sendPhase is still
-  // non-idle — the turn completing is a definitive signal that "sending" is
-  // over.
-  //
-  // Guard: only reset when the latest turn differs from the one recorded at
-  // send time.  Without this, a follow-up message on a thread whose previous
-  // turn already settled would be immediately reset before the server creates
-  // the new turn.
-  useEffect(() => {
-    if (sendPhase === "idle") return;
-    const turnChanged = activeLatestTurn?.turnId !== turnIdAtSendRef.current;
-    if (phase !== "running" && phase !== "connecting" && latestTurnSettled && turnChanged) {
-      resetSendPhase();
-    }
-  }, [activeLatestTurn?.turnId, latestTurnSettled, phase, resetSendPhase, sendPhase]);
+  }, [optimisticPhase]);
 
   useEffect(() => {
     if (!activeThreadId) return;
@@ -2436,7 +2386,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const api = readNativeApi();
       if (!api || !activeThread || isRevertingCheckpoint) return;
 
-      if (phase === "running" || isSendBusy || isConnecting) {
+      if (optimisticPhase === "running" || isSendBusy) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
         return;
       }
@@ -2469,13 +2419,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       setIsRevertingCheckpoint(false);
     },
-    [activeThread, isConnecting, isRevertingCheckpoint, isSendBusy, phase, setThreadError],
+    [activeThread, isRevertingCheckpoint, isSendBusy, optimisticPhase, setThreadError],
   );
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
     const api = readNativeApi();
-    if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
+    if (!api || !activeThread || isSendBusy || sendInFlightRef.current) return;
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
       return;
@@ -2555,7 +2505,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
-    beginSendPhase(baseBranchForWorktree ? "preparing-worktree" : "sending-turn");
+    sendStartedAtRef.current ??= new Date().toISOString();
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -2622,184 +2572,185 @@ export default function ChatView({ threadId }: ChatViewProps) {
     setComposerCursor(0);
     setComposerTrigger(null);
 
-    let createdServerThreadForLocalDraft = false;
-    let turnStartSucceeded = false;
-    let nextThreadBranch = activeThread.branch;
-    let nextThreadWorktreePath = activeThread.worktreePath;
-    await (async () => {
-      // On first message: lock in branch + create worktree if needed.
-      if (baseBranchForWorktree) {
-        beginSendPhase("preparing-worktree");
-        const newBranch = buildTemporaryWorktreeBranchName();
-        const result = await createWorktreeMutation.mutateAsync({
-          cwd: activeProject.cwd,
-          branch: baseBranchForWorktree,
-          newBranch,
-        });
-        nextThreadBranch = result.worktree.branch;
-        nextThreadWorktreePath = result.worktree.path;
-        if (isServerThread) {
+    startSendTransition(async () => {
+      setOptimisticPhase("running");
+      let createdServerThreadForLocalDraft = false;
+      let turnStartSucceeded = false;
+      let nextThreadBranch = activeThread.branch;
+      let nextThreadWorktreePath = activeThread.worktreePath;
+      try {
+        // On first message: lock in branch + create worktree if needed.
+        if (baseBranchForWorktree) {
+          const newBranch = buildTemporaryWorktreeBranchName();
+          const result = await createWorktreeMutation.mutateAsync({
+            cwd: activeProject.cwd,
+            branch: baseBranchForWorktree,
+            newBranch,
+          });
+          nextThreadBranch = result.worktree.branch;
+          nextThreadWorktreePath = result.worktree.path;
+          if (isServerThread) {
+            await api.orchestration.dispatchCommand({
+              type: "thread.meta.update",
+              commandId: newCommandId(),
+              threadId: threadIdForSend,
+              branch: result.worktree.branch,
+              worktreePath: result.worktree.path,
+            });
+            // Keep local thread state in sync immediately so terminal drawer opens
+            // with the worktree cwd/env instead of briefly using the project root.
+            setStoreThreadBranch(threadIdForSend, result.worktree.branch, result.worktree.path);
+          }
+        }
+
+        let firstComposerImageName: string | null = null;
+        if (composerImagesSnapshot.length > 0) {
+          const firstComposerImage = composerImagesSnapshot[0];
+          if (firstComposerImage) {
+            firstComposerImageName = firstComposerImage.name;
+          }
+        }
+        let titleSeed = trimmed;
+        if (!titleSeed) {
+          if (firstComposerImageName) {
+            titleSeed = `Image: ${firstComposerImageName}`;
+          } else if (composerTerminalContextsSnapshot.length > 0) {
+            titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
+          } else {
+            titleSeed = "New thread";
+          }
+        }
+        const title = truncate(titleSeed);
+        const threadCreateModelSelection: ModelSelection = {
+          provider: selectedProvider,
+          model:
+            selectedModel ||
+            activeProject.defaultModelSelection?.model ||
+            DEFAULT_MODEL_BY_PROVIDER.codex,
+          ...(selectedModelSelection.options ? { options: selectedModelSelection.options } : {}),
+        };
+
+        if (isLocalDraftThread) {
+          await api.orchestration.dispatchCommand({
+            type: "thread.create",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            projectId: activeProject.id,
+            title,
+            modelSelection: threadCreateModelSelection,
+            runtimeMode,
+            interactionMode,
+            branch: nextThreadBranch,
+            worktreePath: nextThreadWorktreePath,
+            createdAt: activeThread.createdAt,
+          });
+          createdServerThreadForLocalDraft = true;
+        }
+
+        let setupScript: ProjectScript | null = null;
+        if (baseBranchForWorktree) {
+          setupScript = setupProjectScript(activeProject.scripts);
+        }
+        if (setupScript) {
+          let shouldRunSetupScript = false;
+          if (isServerThread) {
+            shouldRunSetupScript = true;
+          } else {
+            if (createdServerThreadForLocalDraft) {
+              shouldRunSetupScript = true;
+            }
+          }
+          if (shouldRunSetupScript) {
+            const setupScriptOptions: Parameters<typeof runProjectScript>[1] = {
+              worktreePath: nextThreadWorktreePath,
+              rememberAsLastInvoked: false,
+            };
+            if (nextThreadWorktreePath) {
+              setupScriptOptions.cwd = nextThreadWorktreePath;
+            }
+            await runProjectScript(setupScript, setupScriptOptions);
+          }
+        }
+
+        // Auto-title from first message
+        if (isFirstMessage && isServerThread) {
           await api.orchestration.dispatchCommand({
             type: "thread.meta.update",
             commandId: newCommandId(),
             threadId: threadIdForSend,
-            branch: result.worktree.branch,
-            worktreePath: result.worktree.path,
+            title,
           });
-          // Keep local thread state in sync immediately so terminal drawer opens
-          // with the worktree cwd/env instead of briefly using the project root.
-          setStoreThreadBranch(threadIdForSend, result.worktree.branch, result.worktree.path);
         }
-      }
 
-      let firstComposerImageName: string | null = null;
-      if (composerImagesSnapshot.length > 0) {
-        const firstComposerImage = composerImagesSnapshot[0];
-        if (firstComposerImage) {
-          firstComposerImageName = firstComposerImage.name;
-        }
-      }
-      let titleSeed = trimmed;
-      if (!titleSeed) {
-        if (firstComposerImageName) {
-          titleSeed = `Image: ${firstComposerImageName}`;
-        } else if (composerTerminalContextsSnapshot.length > 0) {
-          titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
-        } else {
-          titleSeed = "New thread";
-        }
-      }
-      const title = truncate(titleSeed);
-      const threadCreateModelSelection: ModelSelection = {
-        provider: selectedProvider,
-        model:
-          selectedModel ||
-          activeProject.defaultModelSelection?.model ||
-          DEFAULT_MODEL_BY_PROVIDER.codex,
-        ...(selectedModelSelection.options ? { options: selectedModelSelection.options } : {}),
-      };
-
-      if (isLocalDraftThread) {
-        await api.orchestration.dispatchCommand({
-          type: "thread.create",
-          commandId: newCommandId(),
-          threadId: threadIdForSend,
-          projectId: activeProject.id,
-          title,
-          modelSelection: threadCreateModelSelection,
-          runtimeMode,
-          interactionMode,
-          branch: nextThreadBranch,
-          worktreePath: nextThreadWorktreePath,
-          createdAt: activeThread.createdAt,
-        });
-        createdServerThreadForLocalDraft = true;
-      }
-
-      let setupScript: ProjectScript | null = null;
-      if (baseBranchForWorktree) {
-        setupScript = setupProjectScript(activeProject.scripts);
-      }
-      if (setupScript) {
-        let shouldRunSetupScript = false;
         if (isServerThread) {
-          shouldRunSetupScript = true;
-        } else {
-          if (createdServerThreadForLocalDraft) {
-            shouldRunSetupScript = true;
-          }
+          await persistThreadSettingsForNextTurn({
+            threadId: threadIdForSend,
+            createdAt: messageCreatedAt,
+            ...(selectedModel ? { modelSelection: selectedModelSelection } : {}),
+            runtimeMode,
+            interactionMode,
+          });
         }
-        if (shouldRunSetupScript) {
-          const setupScriptOptions: Parameters<typeof runProjectScript>[1] = {
-            worktreePath: nextThreadWorktreePath,
-            rememberAsLastInvoked: false,
-          };
-          if (nextThreadWorktreePath) {
-            setupScriptOptions.cwd = nextThreadWorktreePath;
-          }
-          await runProjectScript(setupScript, setupScriptOptions);
-        }
-      }
 
-      // Auto-title from first message
-      if (isFirstMessage && isServerThread) {
+        const turnAttachments = await turnAttachmentsPromise;
         await api.orchestration.dispatchCommand({
-          type: "thread.meta.update",
+          type: "thread.turn.start",
           commandId: newCommandId(),
           threadId: threadIdForSend,
-          title,
-        });
-      }
-
-      if (isServerThread) {
-        await persistThreadSettingsForNextTurn({
-          threadId: threadIdForSend,
-          createdAt: messageCreatedAt,
-          ...(selectedModel ? { modelSelection: selectedModelSelection } : {}),
+          message: {
+            messageId: messageIdForSend,
+            role: "user",
+            text: outgoingMessageText,
+            attachments: turnAttachments,
+          },
+          modelSelection: selectedModelSelection,
+          titleSeed: title,
           runtimeMode,
           interactionMode,
+          createdAt: messageCreatedAt,
         });
+        turnStartSucceeded = true;
+      } catch (err: unknown) {
+        if (createdServerThreadForLocalDraft && !turnStartSucceeded) {
+          await api.orchestration
+            .dispatchCommand({
+              type: "thread.delete",
+              commandId: newCommandId(),
+              threadId: threadIdForSend,
+            })
+            .catch(() => undefined);
+        }
+        if (
+          !turnStartSucceeded &&
+          promptRef.current.length === 0 &&
+          composerImagesRef.current.length === 0 &&
+          composerTerminalContextsRef.current.length === 0
+        ) {
+          setOptimisticUserMessages((existing) => {
+            const removed = existing.filter((message) => message.id === messageIdForSend);
+            for (const message of removed) {
+              revokeUserMessagePreviewUrls(message);
+            }
+            const next = existing.filter((message) => message.id !== messageIdForSend);
+            return next.length === existing.length ? existing : next;
+          });
+          promptRef.current = promptForSend;
+          setPrompt(promptForSend);
+          setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
+          addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
+          addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
+          setComposerTrigger(detectComposerTrigger(promptForSend, promptForSend.length));
+        }
+        setThreadError(
+          threadIdForSend,
+          err instanceof Error ? err.message : "Failed to send message.",
+        );
       }
-
-      beginSendPhase("sending-turn");
-      const turnAttachments = await turnAttachmentsPromise;
-      await api.orchestration.dispatchCommand({
-        type: "thread.turn.start",
-        commandId: newCommandId(),
-        threadId: threadIdForSend,
-        message: {
-          messageId: messageIdForSend,
-          role: "user",
-          text: outgoingMessageText,
-          attachments: turnAttachments,
-        },
-        modelSelection: selectedModelSelection,
-        titleSeed: title,
-        runtimeMode,
-        interactionMode,
-        createdAt: messageCreatedAt,
-      });
-      turnStartSucceeded = true;
-    })().catch(async (err: unknown) => {
-      if (createdServerThreadForLocalDraft && !turnStartSucceeded) {
-        await api.orchestration
-          .dispatchCommand({
-            type: "thread.delete",
-            commandId: newCommandId(),
-            threadId: threadIdForSend,
-          })
-          .catch(() => undefined);
+      sendInFlightRef.current = false;
+      if (!turnStartSucceeded) {
+        sendStartedAtRef.current = null;
       }
-      if (
-        !turnStartSucceeded &&
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0
-      ) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
-        promptRef.current = promptForSend;
-        setPrompt(promptForSend);
-        setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
-        addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
-        addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
-        setComposerTrigger(detectComposerTrigger(promptForSend, promptForSend.length));
-      }
-      setThreadError(
-        threadIdForSend,
-        err instanceof Error ? err.message : "Failed to send message.",
-      );
     });
-    sendInFlightRef.current = false;
-    if (!turnStartSucceeded) {
-      resetSendPhase();
-    }
   };
 
   const onInterrupt = async () => {
@@ -2969,14 +2920,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       interactionMode: "default" | "plan";
     }) => {
       const api = readNativeApi();
-      if (
-        !api ||
-        !activeThread ||
-        !isServerThread ||
-        isSendBusy ||
-        isConnecting ||
-        sendInFlightRef.current
-      ) {
+      if (!api || !activeThread || !isServerThread || isSendBusy || sendInFlightRef.current) {
         return;
       }
 
@@ -2997,7 +2941,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       });
 
       sendInFlightRef.current = true;
-      beginSendPhase("sending-turn");
+      sendStartedAtRef.current ??= new Date().toISOString();
       setThreadError(threadIdForSend, null);
       setOptimisticUserMessages((existing) => [
         ...existing,
@@ -3012,73 +2956,72 @@ export default function ChatView({ threadId }: ChatViewProps) {
       shouldAutoScrollRef.current = true;
       forceStickToBottom();
 
-      try {
-        await persistThreadSettingsForNextTurn({
-          threadId: threadIdForSend,
-          createdAt: messageCreatedAt,
-          modelSelection: selectedModelSelection,
-          runtimeMode,
-          interactionMode: nextInteractionMode,
-        });
+      startSendTransition(async () => {
+        setOptimisticPhase("running");
+        try {
+          await persistThreadSettingsForNextTurn({
+            threadId: threadIdForSend,
+            createdAt: messageCreatedAt,
+            modelSelection: selectedModelSelection,
+            runtimeMode,
+            interactionMode: nextInteractionMode,
+          });
 
-        // Keep the mode toggle and plan-follow-up banner in sync immediately
-        // while the same-thread implementation turn is starting.
-        setComposerDraftInteractionMode(threadIdForSend, nextInteractionMode);
+          // Keep the mode toggle and plan-follow-up banner in sync immediately
+          // while the same-thread implementation turn is starting.
+          setComposerDraftInteractionMode(threadIdForSend, nextInteractionMode);
 
-        await api.orchestration.dispatchCommand({
-          type: "thread.turn.start",
-          commandId: newCommandId(),
-          threadId: threadIdForSend,
-          message: {
-            messageId: messageIdForSend,
-            role: "user",
-            text: outgoingMessageText,
-            attachments: [],
-          },
-          modelSelection: selectedModelSelection,
-          titleSeed: activeThread.title,
-          runtimeMode,
-          interactionMode: nextInteractionMode,
-          ...(nextInteractionMode === "default" && activeProposedPlan
-            ? {
-                sourceProposedPlan: {
-                  threadId: activeThread.id,
-                  planId: activeProposedPlan.id,
-                },
-              }
-            : {}),
-          createdAt: messageCreatedAt,
-        });
-        // Optimistically open the plan sidebar when implementing (not refining).
-        // "default" mode here means the agent is executing the plan, which produces
-        // step-tracking activities that the sidebar will display.
-        if (nextInteractionMode === "default") {
-          planSidebarDismissedForTurnRef.current = null;
-          setPlanSidebarOpen(true);
+          await api.orchestration.dispatchCommand({
+            type: "thread.turn.start",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            message: {
+              messageId: messageIdForSend,
+              role: "user",
+              text: outgoingMessageText,
+              attachments: [],
+            },
+            modelSelection: selectedModelSelection,
+            titleSeed: activeThread.title,
+            runtimeMode,
+            interactionMode: nextInteractionMode,
+            ...(nextInteractionMode === "default" && activeProposedPlan
+              ? {
+                  sourceProposedPlan: {
+                    threadId: activeThread.id,
+                    planId: activeProposedPlan.id,
+                  },
+                }
+              : {}),
+            createdAt: messageCreatedAt,
+          });
+          // Optimistically open the plan sidebar when implementing (not refining).
+          // "default" mode here means the agent is executing the plan, which produces
+          // step-tracking activities that the sidebar will display.
+          if (nextInteractionMode === "default") {
+            planSidebarDismissedForTurnRef.current = null;
+            setPlanSidebarOpen(true);
+          }
+        } catch (err) {
+          setOptimisticUserMessages((existing) =>
+            existing.filter((message) => message.id !== messageIdForSend),
+          );
+          setThreadError(
+            threadIdForSend,
+            err instanceof Error ? err.message : "Failed to send plan follow-up.",
+          );
+          sendStartedAtRef.current = null;
         }
         sendInFlightRef.current = false;
-      } catch (err) {
-        setOptimisticUserMessages((existing) =>
-          existing.filter((message) => message.id !== messageIdForSend),
-        );
-        setThreadError(
-          threadIdForSend,
-          err instanceof Error ? err.message : "Failed to send plan follow-up.",
-        );
-        sendInFlightRef.current = false;
-        resetSendPhase();
-      }
+      });
     },
     [
       activeThread,
       activeProposedPlan,
-      beginSendPhase,
       forceStickToBottom,
-      isConnecting,
       isSendBusy,
       isServerThread,
       persistThreadSettingsForNextTurn,
-      resetSendPhase,
       runtimeMode,
       selectedPromptEffort,
       selectedModelSelection,
@@ -3086,6 +3029,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedProviderModels,
       setComposerDraftInteractionMode,
       setThreadError,
+      startSendTransition,
+      setOptimisticPhase,
       selectedModel,
     ],
   );
@@ -3099,7 +3044,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
       !activeProposedPlan ||
       !isServerThread ||
       isSendBusy ||
-      isConnecting ||
       sendInFlightRef.current
     ) {
       return;
@@ -3120,28 +3064,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const nextThreadModelSelection: ModelSelection = selectedModelSelection;
 
     sendInFlightRef.current = true;
-    beginSendPhase("sending-turn");
-    const finish = () => {
-      sendInFlightRef.current = false;
-      resetSendPhase();
-    };
+    sendStartedAtRef.current ??= new Date().toISOString();
 
-    await api.orchestration
-      .dispatchCommand({
-        type: "thread.create",
-        commandId: newCommandId(),
-        threadId: nextThreadId,
-        projectId: activeProject.id,
-        title: nextThreadTitle,
-        modelSelection: nextThreadModelSelection,
-        runtimeMode,
-        interactionMode: "default",
-        branch: activeThread.branch,
-        worktreePath: activeThread.worktreePath,
-        createdAt,
-      })
-      .then(() => {
-        return api.orchestration.dispatchCommand({
+    startSendTransition(async () => {
+      setOptimisticPhase("running");
+      try {
+        await api.orchestration.dispatchCommand({
+          type: "thread.create",
+          commandId: newCommandId(),
+          threadId: nextThreadId,
+          projectId: activeProject.id,
+          title: nextThreadTitle,
+          modelSelection: nextThreadModelSelection,
+          runtimeMode,
+          interactionMode: "default",
+          branch: activeThread.branch,
+          worktreePath: activeThread.worktreePath,
+          createdAt,
+        });
+
+        await api.orchestration.dispatchCommand({
           type: "thread.turn.start",
           commandId: newCommandId(),
           threadId: nextThreadId,
@@ -3157,18 +3099,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
           interactionMode: "default",
           createdAt,
         });
-      })
-      .then(() => api.orchestration.getSnapshot())
-      .then((snapshot) => {
+
+        const snapshot = await api.orchestration.getSnapshot();
         syncServerReadModel(snapshot);
         // Signal that the plan sidebar should open on the new thread.
         planSidebarOpenOnNextThreadRef.current = true;
-        return navigate({
+        await navigate({
           to: "/$threadId",
           params: { threadId: nextThreadId },
         });
-      })
-      .catch(async (err) => {
+      } catch (err) {
         await api.orchestration
           .dispatchCommand({
             type: "thread.delete",
@@ -3188,23 +3128,24 @@ export default function ChatView({ threadId }: ChatViewProps) {
           description:
             err instanceof Error ? err.message : "An error occurred while creating the new thread.",
         });
-      })
-      .then(finish, finish);
+        sendStartedAtRef.current = null;
+      }
+      sendInFlightRef.current = false;
+    });
   }, [
     activeProject,
     activeProposedPlan,
     activeThread,
-    beginSendPhase,
-    isConnecting,
     isSendBusy,
     isServerThread,
     navigate,
-    resetSendPhase,
     runtimeMode,
     selectedPromptEffort,
     selectedModelSelection,
     selectedProvider,
     selectedProviderModels,
+    setOptimisticPhase,
+    startSendTransition,
     syncServerReadModel,
     selectedModel,
   ]);
@@ -3872,7 +3813,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 ? "Ask for follow-up changes or attach images"
                                 : "Ask anything, @tag files/folders, or use / to show available commands"
                       }
-                      disabled={isConnecting || isComposerApprovalState}
+                      disabled={isComposerApprovalState}
                     />
                   </div>
 
@@ -4097,9 +4038,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 type="submit"
                                 size="sm"
                                 className="h-9 rounded-full px-4 sm:h-8"
-                                disabled={isSendBusy || isConnecting}
+                                disabled={isSendBusy}
                               >
-                                {isConnecting || isSendBusy ? "Sending..." : "Refine"}
+                                {isSendBusy ? "Sending..." : "Refine"}
                               </Button>
                             ) : (
                               <div className="flex items-center">
@@ -4107,9 +4048,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                   type="submit"
                                   size="sm"
                                   className="h-9 rounded-l-full rounded-r-none px-4 sm:h-8"
-                                  disabled={isSendBusy || isConnecting}
+                                  disabled={isSendBusy}
                                 >
-                                  {isConnecting || isSendBusy ? "Sending..." : "Implement"}
+                                  {isSendBusy ? "Sending..." : "Implement"}
                                 </Button>
                                 <Menu>
                                   <MenuTrigger
@@ -4119,7 +4060,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                         variant="default"
                                         className="h-9 rounded-l-none rounded-r-full border-l-white/12 px-2 sm:h-8"
                                         aria-label="Implementation actions"
-                                        disabled={isSendBusy || isConnecting}
+                                        disabled={isSendBusy}
                                       />
                                     }
                                   >
@@ -4127,7 +4068,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                   </MenuTrigger>
                                   <MenuPopup align="end" side="top">
                                     <MenuItem
-                                      disabled={isSendBusy || isConnecting}
+                                      disabled={isSendBusy}
                                       onClick={() => void onImplementPlanInNewThread()}
                                     >
                                       Implement in a new thread
@@ -4140,20 +4081,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
                             <button
                               type="submit"
                               className="flex h-9 w-9 enabled:cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:bg-primary hover:scale-105 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
-                              disabled={
-                                isSendBusy || isConnecting || !composerSendState.hasSendableContent
-                              }
+                              disabled={isSendBusy || !composerSendState.hasSendableContent}
                               aria-label={
-                                isConnecting
-                                  ? "Connecting"
-                                  : isPreparingWorktree
-                                    ? "Preparing worktree"
-                                    : isSendBusy
-                                      ? "Sending"
-                                      : "Send message"
+                                isPreparingWorktree
+                                  ? "Preparing worktree"
+                                  : isSendBusy
+                                    ? "Sending"
+                                    : "Send message"
                               }
                             >
-                              {isConnecting || isSendBusy ? (
+                              {isSendBusy ? (
                                 <svg
                                   width="14"
                                   height="14"

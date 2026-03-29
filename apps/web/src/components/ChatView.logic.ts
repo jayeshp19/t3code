@@ -75,8 +75,6 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
   return previewUrls;
 }
 
-export type SendPhase = "idle" | "preparing-worktree" | "sending-turn";
-
 export interface PullRequestDialogState {
   initialReference: string | null;
   key: number;
