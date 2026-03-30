@@ -136,6 +136,7 @@ describe("uiStateStore pure functions", () => {
     ]);
 
     expect(next.projectPinnedById).toEqual({
+      [oldProject1]: false,
       [recreatedProject2]: true,
     });
   });
@@ -232,7 +233,7 @@ describe("uiStateStore pure functions", () => {
 
     const unpinned = toggleProjectPinned(pinned, project1);
 
-    expect(unpinned.projectPinnedById).toEqual({});
+    expect(unpinned.projectPinnedById).toEqual({ [project1]: false });
   });
 
   it("toggleThreadPinned adds and removes pinned state", () => {
@@ -243,7 +244,7 @@ describe("uiStateStore pure functions", () => {
 
     const unpinned = toggleThreadPinned(pinned, thread1);
 
-    expect(unpinned.threadPinnedById).toEqual({});
+    expect(unpinned.threadPinnedById).toEqual({ [thread1]: false });
   });
 
   it("clearThreadUi removes visit state for deleted threads", () => {

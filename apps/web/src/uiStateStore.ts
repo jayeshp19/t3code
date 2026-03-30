@@ -211,9 +211,7 @@ export function syncProjects(state: UiState, projects: readonly SyncProjectInput
       (previousProjectIdForCwd ? previousPinnedById[previousProjectIdForCwd] : undefined) ??
       persistedPinnedProjectCwds.has(project.cwd);
     nextExpandedById[project.id] = expanded;
-    if (pinned) {
-      nextPinnedById[project.id] = true;
-    }
+    nextPinnedById[project.id] = pinned;
     return {
       id: project.id,
       cwd: project.cwd,
@@ -307,8 +305,8 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
     ) {
       nextThreadLastVisitedAtById[thread.id] = thread.seedVisitedAt;
     }
-    if (nextThreadPinnedById[thread.id] === undefined && persistedPinnedThreadIds.has(thread.id)) {
-      nextThreadPinnedById[thread.id] = true;
+    if (nextThreadPinnedById[thread.id] === undefined) {
+      nextThreadPinnedById[thread.id] = persistedPinnedThreadIds.has(thread.id);
     }
   }
   if (
@@ -388,7 +386,7 @@ export function clearThreadUi(state: UiState, threadId: ThreadId): UiState {
 export function toggleThreadPinned(state: UiState, threadId: ThreadId): UiState {
   const nextThreadPinnedById = { ...state.threadPinnedById };
   if (nextThreadPinnedById[threadId]) {
-    delete nextThreadPinnedById[threadId];
+    nextThreadPinnedById[threadId] = false;
   } else {
     nextThreadPinnedById[threadId] = true;
   }
@@ -457,7 +455,7 @@ export function reorderProjects(
 export function toggleProjectPinned(state: UiState, projectId: ProjectId): UiState {
   const nextProjectPinnedById = { ...state.projectPinnedById };
   if (nextProjectPinnedById[projectId]) {
-    delete nextProjectPinnedById[projectId];
+    nextProjectPinnedById[projectId] = false;
   } else {
     nextProjectPinnedById[projectId] = true;
   }
