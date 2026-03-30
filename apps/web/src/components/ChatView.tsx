@@ -85,6 +85,7 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
+  type SessionPhase,
   type TurnDiffSummary,
 } from "../types";
 import { basenameOfPath } from "../vscode-icons";
@@ -253,6 +254,104 @@ interface PendingPullRequestSetupRequest {
   scriptId: string;
 }
 
+interface OptimisticSendPhaseBridge {
+  threadId: ThreadId;
+  startedAt: string;
+  requestSettled: boolean;
+}
+
+function hasLatestTurnCaughtUpToOptimisticSend(
+  latestTurnRequestedAt: string | null,
+  optimisticSendStartedAt: string,
+): boolean {
+  if (latestTurnRequestedAt === null) {
+    return false;
+  }
+  const latestTurnRequestedAtMs = Date.parse(latestTurnRequestedAt);
+  const optimisticSendStartedAtMs = Date.parse(optimisticSendStartedAt);
+  if (Number.isNaN(latestTurnRequestedAtMs) || Number.isNaN(optimisticSendStartedAtMs)) {
+    return false;
+  }
+  return latestTurnRequestedAtMs >= optimisticSendStartedAtMs;
+}
+
+function useOptimisticSendPhase(input: {
+  activeThreadId: ThreadId | null;
+  phase: SessionPhase;
+  latestTurnRequestedAt: string | null;
+}): {
+  activeSendStartedAt: string | null;
+  clearOptimisticSendPhase: (threadId?: ThreadId | null) => void;
+  effectivePhase: SessionPhase;
+  isSendBusy: boolean;
+  markOptimisticSendRequestSettled: (threadId: ThreadId) => void;
+  setOptimisticPhase: (phase: SessionPhase) => void;
+  startOptimisticSendPhase: (threadId: ThreadId, startedAt: string) => void;
+} {
+  const [optimisticPhase, setOptimisticPhase] = useOptimistic(input.phase);
+  const [sendPhaseBridge, setSendPhaseBridge] = useState<OptimisticSendPhaseBridge | null>(null);
+
+  const isSendForActiveThread =
+    sendPhaseBridge !== null && sendPhaseBridge.threadId === input.activeThreadId;
+
+  useEffect(() => {
+    if (!sendPhaseBridge || !isSendForActiveThread || !sendPhaseBridge.requestSettled) {
+      return;
+    }
+    // Keep the optimistic phase visible until the async send has settled and
+    // the authoritative thread state has caught up to that send.
+    if (
+      input.phase === "connecting" ||
+      input.phase === "running" ||
+      hasLatestTurnCaughtUpToOptimisticSend(input.latestTurnRequestedAt, sendPhaseBridge.startedAt)
+    ) {
+      setSendPhaseBridge(null);
+    }
+  }, [input.latestTurnRequestedAt, input.phase, isSendForActiveThread, sendPhaseBridge]);
+
+  const startOptimisticSendPhase = useCallback((threadId: ThreadId, startedAt: string) => {
+    setSendPhaseBridge({
+      threadId,
+      startedAt,
+      requestSettled: false,
+    });
+  }, []);
+
+  const markOptimisticSendRequestSettled = useCallback((threadId: ThreadId) => {
+    setSendPhaseBridge((current) => {
+      if (!current || current.threadId !== threadId || current.requestSettled) {
+        return current;
+      }
+      return {
+        ...current,
+        requestSettled: true,
+      };
+    });
+  }, []);
+
+  const clearOptimisticSendPhase = useCallback((threadId?: ThreadId | null) => {
+    setSendPhaseBridge((current) => {
+      if (!current) {
+        return current;
+      }
+      if (threadId === undefined || threadId === null || current.threadId === threadId) {
+        return null;
+      }
+      return current;
+    });
+  }, []);
+
+  return {
+    activeSendStartedAt: isSendForActiveThread ? sendPhaseBridge.startedAt : null,
+    clearOptimisticSendPhase,
+    effectivePhase: isSendForActiveThread ? optimisticPhase : input.phase,
+    isSendBusy: isSendForActiveThread,
+    markOptimisticSendRequestSettled,
+    setOptimisticPhase,
+    startOptimisticSendPhase,
+  };
+}
+
 export default function ChatView({ threadId }: ChatViewProps) {
   const threads = useStore((store) => store.threads);
   const projects = useStore((store) => store.projects);
@@ -338,8 +437,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [localDraftErrorsByThreadId, setLocalDraftErrorsByThreadId] = useState<
     Record<ThreadId, string | null>
   >({});
-  const [isSendPending, startSendTransition] = useTransition();
-  const sendStartedAtRef = useRef<string | null>(null);
+  const [, startSendTransition] = useTransition();
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
@@ -671,16 +769,28 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const selectedModelForPicker = selectedModel;
   const phase = derivePhase(activeThread?.session ?? null);
-  const [optimisticPhase, setOptimisticPhase] = useOptimistic(phase);
-  const isSendBusy = isSendPending;
-  const isPreparingWorktree = createWorktreeMutation.isPending;
+  const {
+    activeSendStartedAt,
+    clearOptimisticSendPhase,
+    effectivePhase,
+    isSendBusy,
+    markOptimisticSendRequestSettled,
+    setOptimisticPhase,
+    startOptimisticSendPhase,
+  } = useOptimisticSendPhase({
+    activeThreadId,
+    phase,
+    latestTurnRequestedAt: activeLatestTurn?.requestedAt ?? null,
+  });
+  const isSendForActiveThread = isSendBusy;
+  const isPreparingWorktree = createWorktreeMutation.isPending && isSendForActiveThread;
   const isWorking =
-    optimisticPhase === "running" || optimisticPhase === "connecting" || isRevertingCheckpoint;
+    effectivePhase === "running" || effectivePhase === "connecting" || isRevertingCheckpoint;
   const nowIso = new Date(nowTick).toISOString();
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
-    sendStartedAtRef.current,
+    activeSendStartedAt,
   );
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(
@@ -2029,14 +2139,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       return [];
     });
-    sendStartedAtRef.current = null;
+    clearOptimisticSendPhase();
     setComposerHighlightedItemId(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     setExpandedImage(null);
-  }, [threadId]);
+  }, [clearOptimisticSendPhase, threadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2160,14 +2270,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
       : "local";
 
   useEffect(() => {
-    if (optimisticPhase !== "running" && optimisticPhase !== "connecting") return;
+    if (effectivePhase !== "running" && effectivePhase !== "connecting") return;
     const timer = window.setInterval(() => {
       setNowTick(Date.now());
     }, 1000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [optimisticPhase]);
+  }, [effectivePhase]);
 
   useEffect(() => {
     if (!activeThreadId) return;
@@ -2387,7 +2497,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const api = readNativeApi();
       if (!api || !activeThread || isRevertingCheckpoint) return;
 
-      if (optimisticPhase === "running" || isSendBusy) {
+      if (effectivePhase === "running" || isSendBusy) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
         return;
       }
@@ -2420,7 +2530,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       setIsRevertingCheckpoint(false);
     },
-    [activeThread, isRevertingCheckpoint, isSendBusy, optimisticPhase, setThreadError],
+    [activeThread, effectivePhase, isRevertingCheckpoint, isSendBusy, setThreadError],
   );
 
   const onSend = async (e?: { preventDefault: () => void }) => {
@@ -2506,7 +2616,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
-    sendStartedAtRef.current ??= new Date().toISOString();
+    startOptimisticSendPhase(activeThread.id, new Date().toISOString());
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -2755,9 +2865,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
           threadIdForSend,
           err instanceof Error ? err.message : "Failed to send message.",
         );
+        clearOptimisticSendPhase(threadIdForSend);
       }
       sendInFlightRef.current = false;
-      sendStartedAtRef.current = null;
+      markOptimisticSendRequestSettled(threadIdForSend);
     });
   };
 
@@ -2949,7 +3060,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       });
 
       sendInFlightRef.current = true;
-      sendStartedAtRef.current ??= new Date().toISOString();
+      startOptimisticSendPhase(activeThread.id, new Date().toISOString());
       setThreadError(threadIdForSend, null);
       setOptimisticUserMessages((existing) => [
         ...existing,
@@ -3021,13 +3132,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
           setOptimisticUserMessages((existing) =>
             existing.filter((message) => message.id !== messageIdForSend),
           );
+          clearOptimisticSendPhase(threadIdForSend);
           setThreadError(
             threadIdForSend,
             err instanceof Error ? err.message : "Failed to send plan follow-up.",
           );
         }
         sendInFlightRef.current = false;
-        sendStartedAtRef.current = null;
+        markOptimisticSendRequestSettled(threadIdForSend);
       });
     },
     [
@@ -3042,10 +3154,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedModelSelection,
       selectedProvider,
       selectedProviderModels,
+      clearOptimisticSendPhase,
+      markOptimisticSendRequestSettled,
       setComposerDraftInteractionMode,
       setThreadError,
       startSendTransition,
       setOptimisticPhase,
+      startOptimisticSendPhase,
       syncServerReadModel,
       selectedModel,
     ],
@@ -3080,7 +3195,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const nextThreadModelSelection: ModelSelection = selectedModelSelection;
 
     sendInFlightRef.current = true;
-    sendStartedAtRef.current ??= new Date().toISOString();
+    startOptimisticSendPhase(activeThread.id, new Date().toISOString());
 
     startSendTransition(async () => {
       setOptimisticPhase("running");
@@ -3125,6 +3240,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           params: { threadId: nextThreadId },
         });
       } catch (err) {
+        clearOptimisticSendPhase(activeThread.id);
         await api.orchestration
           .dispatchCommand({
             type: "thread.delete",
@@ -3146,7 +3262,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         });
       }
       sendInFlightRef.current = false;
-      sendStartedAtRef.current = null;
+      markOptimisticSendRequestSettled(activeThread.id);
     });
   }, [
     activeProject,
@@ -3160,7 +3276,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     selectedModelSelection,
     selectedProvider,
     selectedProviderModels,
+    clearOptimisticSendPhase,
+    markOptimisticSendRequestSettled,
     setOptimisticPhase,
+    startOptimisticSendPhase,
     startSendTransition,
     syncServerReadModel,
     selectedModel,
