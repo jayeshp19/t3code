@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 
 import type { TerminalProcessInspectionError } from "./Services/TerminalProcessInspector";
-import { parsePidList, parsePortList } from "./utils";
+import { parsePortList } from "./utils";
 
 interface InspectorCommandResult {
   readonly stdout: string;
@@ -27,9 +27,9 @@ export const collectWindowsChildPids = Effect.fn("process.collectWindowsChildPid
   runCommand: WindowsRunCommand,
 ): Effect.fn.Return<number[], TerminalProcessInspectionError> {
   const command = [
-    `$children = Get-CimInstance Win32_Process -Filter "ParentProcessId = ${terminalPid}" -ErrorAction SilentlyContinue`,
-    "if (-not $children) { exit 0 }",
-    "$children | Select-Object -ExpandProperty ProcessId",
+    "$procs = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId -ErrorAction SilentlyContinue",
+    "if (-not $procs) { exit 0 }",
+    '$procs | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
   ].join("; ");
   const result = yield* runCommand({
     operation: "TerminalProcessInspector.collectWindowsChildPids",
@@ -37,12 +37,40 @@ export const collectWindowsChildPids = Effect.fn("process.collectWindowsChildPid
     command: "powershell.exe",
     args: ["-NoProfile", "-NonInteractive", "-Command", command],
     timeoutMs: 1_500,
-    maxOutputBytes: 32_768,
+    maxOutputBytes: 262_144,
   });
   if (result.exitCode !== 0) {
     return [];
   }
-  return parsePidList(result.stdout);
+
+  const childrenByParentPid = new Map<number, number[]>();
+  for (const line of result.stdout.split(/\r?\n/g)) {
+    const [pidRaw, ppidRaw] = line.trim().split(/\s+/g);
+    const pid = Number(pidRaw);
+    const ppid = Number(ppidRaw);
+    if (!Number.isInteger(pid) || !Number.isInteger(ppid)) continue;
+    const children = childrenByParentPid.get(ppid);
+    if (children) {
+      children.push(pid);
+    } else {
+      childrenByParentPid.set(ppid, [pid]);
+    }
+  }
+
+  const family = new Set<number>();
+  const pending = [terminalPid];
+  while (pending.length > 0) {
+    const parentPid = pending.shift()!;
+    const childPids = childrenByParentPid.get(parentPid);
+    if (!childPids || childPids.length === 0) continue;
+    for (const childPid of childPids) {
+      if (family.has(childPid)) continue;
+      family.add(childPid);
+      pending.push(childPid);
+    }
+  }
+
+  return [...family];
 });
 
 export const checkWindowsListeningPorts = Effect.fn("process.checkWindowsListeningPorts")(
