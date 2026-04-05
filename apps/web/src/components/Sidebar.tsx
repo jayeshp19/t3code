@@ -297,13 +297,13 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
     (state) =>
       selectThreadTerminalState(state.terminalStateByThreadId, props.threadId).runningTerminalIds,
   );
+  const gitCwd = thread?.worktreePath ?? props.projectCwd;
+  const gitStatus = useGitStatus(thread?.branch !== null ? gitCwd : null);
 
   if (!thread) {
     return null;
   }
 
-  const gitCwd = thread.worktreePath ?? props.projectCwd;
-  const gitStatus = useGitStatus(thread.branch !== null ? gitCwd : null);
   const isActive = props.routeThreadId === thread.id;
   const isSelected = props.selectedThreadIds.has(thread.id);
   const isHighlighted = isActive || isSelected;
