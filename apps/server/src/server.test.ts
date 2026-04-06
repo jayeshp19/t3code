@@ -22,7 +22,16 @@ import {
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
-import { Duration, Effect, FileSystem, Layer, ManagedRuntime, Path, Stream } from "effect";
+import {
+  Deferred,
+  Duration,
+  Effect,
+  FileSystem,
+  Layer,
+  ManagedRuntime,
+  Path,
+  Stream,
+} from "effect";
 import {
   FetchHttpClient,
   HttpBody,
@@ -1788,6 +1797,82 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const elapsedMs = Date.now() - startedAt;
 
         assertTrue(elapsedMs < 1_000);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "starts a background local git status refresh after a successful git.runStackedAction",
+    () =>
+      Effect.gen(function* () {
+        const localRefreshStarted = yield* Deferred.make<void>();
+
+        yield* buildAppUnderTest({
+          layers: {
+            gitManager: {
+              invalidateLocalStatus: () => Effect.void,
+              invalidateRemoteStatus: () => Effect.void,
+              localStatus: () =>
+                Deferred.succeed(localRefreshStarted, undefined).pipe(
+                  Effect.ignore,
+                  Effect.andThen(
+                    Effect.succeed({
+                      isRepo: true,
+                      hasOriginRemote: true,
+                      isDefaultBranch: false,
+                      branch: "feature/demo",
+                      hasWorkingTreeChanges: false,
+                      workingTree: { files: [], insertions: 0, deletions: 0 },
+                    }),
+                  ),
+                ),
+              remoteStatus: () =>
+                Effect.sleep(Duration.seconds(2)).pipe(
+                  Effect.as({
+                    hasUpstream: true,
+                    aheadCount: 0,
+                    behindCount: 0,
+                    pr: null,
+                  }),
+                ),
+              runStackedAction: () =>
+                Effect.succeed({
+                  action: "commit" as const,
+                  branch: { status: "skipped_not_requested" as const },
+                  commit: {
+                    status: "created" as const,
+                    commitSha: "abc123",
+                    subject: "feat: demo",
+                  },
+                  push: { status: "skipped_not_requested" as const },
+                  pr: { status: "skipped_not_requested" as const },
+                  toast: {
+                    title: "Committed abc123",
+                    description: "feat: demo",
+                    cta: {
+                      kind: "run_action" as const,
+                      label: "Push",
+                      action: {
+                        kind: "push" as const,
+                      },
+                    },
+                  },
+                }),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.gitRunStackedAction]({
+              actionId: "action-1",
+              cwd: "/tmp/repo",
+              action: "commit",
+            }).pipe(Stream.runCollect),
+          ),
+        );
+
+        yield* Deferred.await(localRefreshStarted);
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
