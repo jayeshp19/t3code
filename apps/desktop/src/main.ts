@@ -62,7 +62,7 @@ import {
 import { isBackendReadinessAborted, waitForHttpReady } from "./backendReadiness";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { resolveDesktopServerExposure } from "./serverExposure";
-import { DesktopSshEnvironmentManager } from "./sshEnvironment";
+import { DesktopSshEnvironmentManager, resolveRemoteT3CliPackageSpec } from "./sshEnvironment";
 import { syncShellEnvironment } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
 import { ServerListeningDetector } from "./serverListeningDetector";
@@ -808,6 +808,12 @@ async function requestSshPasswordFromRenderer(input: {
 
 const desktopSshEnvironmentManager = new DesktopSshEnvironmentManager({
   passwordProvider: requestSshPasswordFromRenderer,
+  resolveCliPackageSpec: () =>
+    resolveRemoteT3CliPackageSpec({
+      appVersion: app.getVersion(),
+      updateChannel: desktopSettings.updateChannel,
+      isDevelopment,
+    }),
 });
 
 function resolveUpdaterErrorContext(): DesktopUpdateErrorContext {
