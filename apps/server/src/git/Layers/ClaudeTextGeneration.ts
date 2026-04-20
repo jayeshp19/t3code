@@ -31,6 +31,7 @@ import {
 import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
 import {
   getClaudeModelCapabilities,
+  normalizeClaudeEffortForCli,
   resolveClaudeApiModelId,
   resolveClaudeEffort,
 } from "../../provider/Layers/ClaudeProvider.ts";
@@ -95,7 +96,7 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
     const rawEffortValue = getProviderOptionCurrentValue(findDescriptor("effort"));
     const rawEffort = typeof rawEffortValue === "string" ? rawEffortValue : undefined;
-    const resolvedEffort = resolveClaudeEffort(caps, rawEffort);
+    const resolvedEffort = normalizeClaudeEffortForCli(resolveClaudeEffort(caps, rawEffort));
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");
     const thinking =

@@ -43,6 +43,7 @@ import {
 } from "@t3tools/contracts";
 import {
   applyClaudePromptEffortPrefix,
+  findPromptInjectedDescriptor,
   getProviderOptionDescriptors,
   getModelSelectionOptionValue,
   trimOrNull,
@@ -67,6 +68,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   getClaudeModelCapabilities,
+  normalizeClaudeEffortForCli,
   resolveClaudeApiModelId,
   resolveClaudeEffort,
 } from "./ClaudeProvider.ts";
@@ -220,16 +222,8 @@ function normalizeClaudeStreamMessages(cause: Cause.Cause<Error>): ReadonlyArray
 }
 
 function getEffectiveClaudeAgentEffort(effort: string | null | undefined): ClaudeSdkEffort | null {
-  if (!effort) {
-    return null;
-  }
-  if (effort === "ultrathink") {
-    return null;
-  }
-  if (effort === "xhigh") {
-    return "max";
-  }
-  return effort as ClaudeSdkEffort;
+  const normalized = normalizeClaudeEffortForCli(effort);
+  return normalized ? (normalized as ClaudeSdkEffort) : null;
 }
 
 function isClaudeInterruptedMessage(message: string): boolean {
@@ -569,23 +563,10 @@ function buildPromptText(input: ProviderSendTurnInput): string {
     input.modelSelection?.provider === "claudeAgent" ? input.modelSelection.model : undefined;
   const caps = getClaudeModelCapabilities(claudeModel);
 
-  // For prompt injection, we check if the raw effort is a prompt-injected level (e.g. "ultrathink").
-  // Normal Claude effort resolution strips prompt-injected values back to the model default,
-  // so prompt formatting must look at the raw selection value directly.
   const trimmedEffort = trimOrNull(rawEffort);
-  const promptInjectedDescriptor = getProviderOptionDescriptors({ caps }).find(
-    (descriptor) =>
-      descriptor.type === "select" &&
-      (descriptor.id === "effort" ||
-        descriptor.id === "reasoningEffort" ||
-        descriptor.id === "reasoning" ||
-        descriptor.id === "variant") &&
-      (descriptor.promptInjectedValues?.length ?? 0) > 0,
-  );
+  const promptInjectedDescriptor = findPromptInjectedDescriptor(caps);
   const promptEffort =
-    trimmedEffort &&
-    promptInjectedDescriptor?.type === "select" &&
-    promptInjectedDescriptor.promptInjectedValues?.includes(trimmedEffort)
+    trimmedEffort && promptInjectedDescriptor?.promptInjectedValues?.includes(trimmedEffort)
       ? trimmedEffort
       : null;
   return applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);

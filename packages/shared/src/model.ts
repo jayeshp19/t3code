@@ -292,6 +292,25 @@ export function createModelSelection(
   } as ModelSelection;
 }
 
+const PROMPT_INJECTED_DESCRIPTOR_IDS = new Set([
+  "effort",
+  "reasoningEffort",
+  "reasoning",
+  "variant",
+]);
+
+export function findPromptInjectedDescriptor(
+  caps: ModelCapabilities,
+): Extract<ProviderOptionDescriptor, { type: "select" }> | undefined {
+  const descriptor = getProviderOptionDescriptors({ caps }).find(
+    (d) =>
+      d.type === "select" &&
+      PROMPT_INJECTED_DESCRIPTOR_IDS.has(d.id) &&
+      (d.promptInjectedValues?.length ?? 0) > 0,
+  );
+  return descriptor?.type === "select" ? descriptor : undefined;
+}
+
 export function applyClaudePromptEffortPrefix(
   text: string,
   effort: string | null | undefined,

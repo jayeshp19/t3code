@@ -28,7 +28,7 @@ import {
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
-  getProviderOptionDescriptors,
+  findPromptInjectedDescriptor,
 } from "@t3tools/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
@@ -309,20 +309,8 @@ function formatOutgoingPrompt(params: {
   text: string;
 }): string {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
-  const promptInjectedDescriptor = getProviderOptionDescriptors({ caps }).find(
-    (descriptor) =>
-      descriptor.type === "select" &&
-      (descriptor.id === "reasoningEffort" ||
-        descriptor.id === "effort" ||
-        descriptor.id === "reasoning" ||
-        descriptor.id === "variant") &&
-      (descriptor.promptInjectedValues?.length ?? 0) > 0,
-  );
-  if (
-    params.effort &&
-    promptInjectedDescriptor?.type === "select" &&
-    promptInjectedDescriptor.promptInjectedValues?.includes(params.effort)
-  ) {
+  const promptInjectedDescriptor = findPromptInjectedDescriptor(caps);
+  if (params.effort && promptInjectedDescriptor?.promptInjectedValues?.includes(params.effort)) {
     return applyClaudePromptEffortPrefix(params.text, params.effort);
   }
   return params.text;

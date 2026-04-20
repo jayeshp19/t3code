@@ -221,6 +221,20 @@ export function resolveClaudeEffort(
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Maps a T3-internal effort value to a Claude CLI/SDK-compatible effort value.
+ * - `"xhigh"` (T3-internal level between high and max) maps to `"max"`.
+ * - `"ultrathink"` is prompt-injected only; returns `undefined` so the CLI
+ *    flag is omitted entirely.
+ * - All other values pass through unchanged.
+ */
+export function normalizeClaudeEffortForCli(effort: string | null | undefined): string | undefined {
+  if (!effort) return undefined;
+  if (effort === "ultrathink") return undefined;
+  if (effort === "xhigh") return "max";
+  return effort;
+}
+
 export function resolveClaudeApiModelId(modelSelection: ClaudeModelSelection): string {
   switch (getModelSelectionOptionValue(modelSelection, "contextWindow")) {
     case "1m":
