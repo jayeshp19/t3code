@@ -43,9 +43,9 @@ import {
 } from "@t3tools/contracts";
 import {
   applyClaudePromptEffortPrefix,
-  getProviderOptionDescriptors,
   getModelSelectionOptionValue,
-  trimOrNull,
+  getProviderOptionDescriptors,
+  resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import {
   Cause,
@@ -569,25 +569,7 @@ function buildPromptText(input: ProviderSendTurnInput): string {
     input.modelSelection?.provider === "claudeAgent" ? input.modelSelection.model : undefined;
   const caps = getClaudeModelCapabilities(claudeModel);
 
-  // For prompt injection, we check if the raw effort is a prompt-injected level (e.g. "ultrathink").
-  // Normal Claude effort resolution strips prompt-injected values back to the model default,
-  // so prompt formatting must look at the raw selection value directly.
-  const trimmedEffort = trimOrNull(rawEffort);
-  const promptInjectedDescriptor = getProviderOptionDescriptors({ caps }).find(
-    (descriptor) =>
-      descriptor.type === "select" &&
-      (descriptor.id === "effort" ||
-        descriptor.id === "reasoningEffort" ||
-        descriptor.id === "reasoning" ||
-        descriptor.id === "variant") &&
-      (descriptor.promptInjectedValues?.length ?? 0) > 0,
-  );
-  const promptEffort =
-    trimmedEffort &&
-    promptInjectedDescriptor?.type === "select" &&
-    promptInjectedDescriptor.promptInjectedValues?.includes(trimmedEffort)
-      ? trimmedEffort
-      : null;
+  const promptEffort = resolvePromptInjectedEffort(caps, rawEffort);
   return applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);
 }
 

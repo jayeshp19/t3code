@@ -292,6 +292,29 @@ export function createModelSelection(
   } as ModelSelection;
 }
 
+/**
+ * Returns the effort value if it is a prompt-injected value according to
+ * any select descriptor in the given capabilities, or null otherwise.
+ *
+ * Unlike a single `find`, this checks every descriptor so that the
+ * correct descriptor's `promptInjectedValues` list is consulted even when
+ * multiple select descriptors exist.
+ */
+export function resolvePromptInjectedEffort(
+  caps: ModelCapabilities,
+  rawEffort: string | null | undefined,
+): string | null {
+  const trimmed = trimOrNull(rawEffort);
+  if (!trimmed) return null;
+  const descriptors = getProviderOptionDescriptors({ caps });
+  for (const descriptor of descriptors) {
+    if (descriptor.type === "select" && descriptor.promptInjectedValues?.includes(trimmed)) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
 export function applyClaudePromptEffortPrefix(
   text: string,
   effort: string | null | undefined,
