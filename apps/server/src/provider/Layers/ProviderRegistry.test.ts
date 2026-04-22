@@ -54,20 +54,6 @@ function booleanDescriptor(id: string, label: string) {
   };
 }
 
-const fakeOpenCodeSnapshot: ServerProvider = {
-  provider: "opencode",
-  status: "warning",
-  enabled: true,
-  installed: false,
-  auth: { status: "unknown" },
-  checkedAt: "2026-03-25T00:00:00.000Z",
-  version: null,
-  models: [],
-  slashCommands: [],
-  skills: [],
-  message: "OpenCode test stub",
-};
-
 function mockHandle(result: { stdout: string; stderr: string; code: number }) {
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),

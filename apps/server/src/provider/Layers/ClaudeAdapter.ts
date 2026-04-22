@@ -67,6 +67,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   getClaudeModelCapabilities,
+  normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
   resolveClaudeEffort,
 } from "./ClaudeProvider.ts";
@@ -220,16 +221,8 @@ function normalizeClaudeStreamMessages(cause: Cause.Cause<Error>): ReadonlyArray
 }
 
 function getEffectiveClaudeAgentEffort(effort: string | null | undefined): ClaudeSdkEffort | null {
-  if (!effort) {
-    return null;
-  }
-  if (effort === "ultrathink") {
-    return null;
-  }
-  if (effort === "xhigh") {
-    return "max";
-  }
-  return effort as ClaudeSdkEffort;
+  const normalized = normalizeClaudeCliEffort(effort);
+  return normalized ? (normalized as ClaudeSdkEffort) : null;
 }
 
 function isClaudeInterruptedMessage(message: string): boolean {

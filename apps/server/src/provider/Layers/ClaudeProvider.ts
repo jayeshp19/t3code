@@ -221,6 +221,26 @@ export function resolveClaudeEffort(
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Normalize a resolved Claude effort value into one suitable for the Claude
+ * CLI's `--effort` flag.
+ *
+ * Mirrors the mapping used when invoking the Claude Agent SDK
+ * ({@link getEffectiveClaudeAgentEffort} in ClaudeAdapter): the Opus 4.7
+ * capability `"xhigh"` is rewritten to the accepted CLI value `"max"`, and
+ * `"ultrathink"` is filtered out because it is a prompt-prefix mode rather
+ * than a CLI-effort value. Returns `undefined` when no flag should be passed.
+ */
+export function normalizeClaudeCliEffort(effort: string | null | undefined): string | undefined {
+  if (!effort || effort === "ultrathink") {
+    return undefined;
+  }
+  if (effort === "xhigh") {
+    return "max";
+  }
+  return effort;
+}
+
 export function resolveClaudeApiModelId(modelSelection: ClaudeModelSelection): string {
   switch (getModelSelectionOptionValue(modelSelection, "contextWindow")) {
     case "1m":

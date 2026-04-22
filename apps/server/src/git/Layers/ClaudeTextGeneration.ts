@@ -28,9 +28,10 @@ import {
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "../Utils.ts";
-import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
+import { getModelSelectionOptionValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
 import {
   getClaudeModelCapabilities,
+  normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
   resolveClaudeEffort,
 } from "../../provider/Layers/ClaudeProvider.ts";
@@ -93,9 +94,12 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
       selections: modelSelection.options,
     });
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
-    const rawEffortValue = getProviderOptionCurrentValue(findDescriptor("effort"));
-    const rawEffort = typeof rawEffortValue === "string" ? rawEffortValue : undefined;
-    const resolvedEffort = resolveClaudeEffort(caps, rawEffort);
+    const rawEffortSelection = getModelSelectionOptionValue(modelSelection, "effort");
+    const resolvedEffort = resolveClaudeEffort(
+      caps,
+      typeof rawEffortSelection === "string" ? rawEffortSelection : undefined,
+    );
+    const cliEffort = normalizeClaudeCliEffort(resolvedEffort);
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");
     const thinking =
@@ -123,7 +127,7 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
           jsonSchemaStr,
           "--model",
           resolveClaudeApiModelId(modelSelection),
-          ...(resolvedEffort ? ["--effort", resolvedEffort] : []),
+          ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(Object.keys(settings).length > 0 ? ["--settings", JSON.stringify(settings)] : []),
           "--dangerously-skip-permissions",
         ],
