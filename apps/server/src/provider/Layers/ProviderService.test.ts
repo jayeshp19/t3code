@@ -935,9 +935,10 @@ routing.layer("ProviderServiceLive routing", (it) => {
       const provider = yield* ProviderService;
       const runtimeRepository = yield* ProviderSessionRuntimeRepository;
 
-      const session = yield* provider.startSession(asThreadId("thread-1"), {
+      const threadId = asThreadId("thread-runtime-status");
+      const session = yield* provider.startSession(threadId, {
         provider: "codex",
-        threadId: asThreadId("thread-1"),
+        threadId,
         runtimeMode: "full-access",
       });
       yield* provider.sendTurn({
@@ -963,7 +964,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
             lastError: string | null;
             lastRuntimeEvent: string | null;
           };
-          assert.equal(runtimePayload.cwd, process.cwd());
+          assert.equal(runtimePayload.cwd, session.cwd);
           assert.equal(runtimePayload.model, null);
           assert.equal(runtimePayload.activeTurnId, `turn-${String(session.threadId)}`);
           assert.equal(runtimePayload.lastError, null);
