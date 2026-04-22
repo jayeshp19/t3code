@@ -13,9 +13,11 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
   buildServerProvider,
+  nonEmptyTrimmed,
   parseGenericCliVersion,
   providerModelsFromSettings,
 } from "../providerSnapshot.ts";
+import { compareCliVersions } from "../cliVersion.ts";
 import { OpenCodeProvider } from "../Services/OpenCodeProvider.ts";
 import {
   OpenCodeRuntime,
@@ -29,6 +31,7 @@ const OPENCODE_PRESENTATION = {
   displayName: "OpenCode",
   showInteractionModeToggle: false,
 } as const;
+const MINIMUM_OPENCODE_VERSION = "1.14.19";
 
 class OpenCodeProbeError extends Data.TaggedError("OpenCodeProbeError")<{
   readonly cause: unknown;
@@ -225,10 +228,16 @@ function flattenOpenCodeModels(input: OpenCodeInventory): ReadonlyArray<ServerPr
     }
 
     for (const model of Object.values(provider.models)) {
+      const name = nonEmptyTrimmed(model.name);
+      if (!name) {
+        continue;
+      }
+
+      const subProvider = nonEmptyTrimmed(provider.name);
       models.push({
         slug: `${provider.id}/${model.id}`,
-        name: model.name,
-        subProvider: provider.name,
+        name,
+        ...(subProvider ? { subProvider } : {}),
         isCustom: false,
         capabilities: openCodeCapabilitiesForModel({
           providerID: provider.id,
@@ -372,6 +381,36 @@ export const OpenCodeProviderLive = Layer.effect(
           return fallback(Cause.squash(versionExit.cause));
         }
         version = parseGenericCliVersion(versionExit.value.stdout) ?? null;
+
+        if (!version) {
+          return fallback(
+            new Error(
+              `Unable to determine OpenCode version from \`opencode --version\` output. T3 Code requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
+            ),
+            null,
+          );
+        }
+        if (compareCliVersions(version, MINIMUM_OPENCODE_VERSION) < 0) {
+          return buildServerProvider({
+            provider: PROVIDER,
+            presentation: OPENCODE_PRESENTATION,
+            enabled: input.settings.enabled,
+            checkedAt,
+            models: providerModelsFromSettings(
+              [],
+              PROVIDER,
+              customModels,
+              DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+            ),
+            probe: {
+              installed: true,
+              version,
+              status: "error",
+              auth: { status: "unknown" },
+              message: `OpenCode v${version} is too old. Upgrade to v${MINIMUM_OPENCODE_VERSION} or newer.`,
+            },
+          });
+        }
       }
 
       const inventoryExit = yield* Effect.exit(
