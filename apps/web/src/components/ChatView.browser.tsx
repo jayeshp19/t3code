@@ -3807,9 +3807,17 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       const newDraftId = draftIdFromPath(newThreadPath);
 
+      // `toMatchObject` matches objects loosely (extras ignored) but compares
+      // arrays strictly, so wrap `options` in `arrayContaining` to keep the
+      // assertion focused on sticky `fastMode` carrying over without asserting
+      // on exactly which other options are preserved.
       expect(composerDraftFor(newDraftId)).toMatchObject({
         modelSelectionByProvider: {
-          codex: createModelSelection("codex", "gpt-5.3-codex", [{ id: "fastMode", value: true }]),
+          codex: {
+            provider: "codex",
+            model: "gpt-5.3-codex",
+            options: expect.arrayContaining([{ id: "fastMode", value: true }]),
+          },
         },
         activeProvider: "codex",
       });
@@ -3924,9 +3932,16 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       const draftId = draftIdFromPath(threadPath);
 
+      // See the note on the sibling sticky-codex test: arrays match strictly
+      // under `toMatchObject`, so use `arrayContaining` to keep the assertion
+      // scoped to the sticky trait (`fastMode`) that must carry over.
       expect(composerDraftFor(draftId)).toMatchObject({
         modelSelectionByProvider: {
-          codex: createModelSelection("codex", "gpt-5.3-codex", [{ id: "fastMode", value: true }]),
+          codex: {
+            provider: "codex",
+            model: "gpt-5.3-codex",
+            options: expect.arrayContaining([{ id: "fastMode", value: true }]),
+          },
         },
         activeProvider: "codex",
       });
