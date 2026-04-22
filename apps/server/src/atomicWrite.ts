@@ -1,28 +1,24 @@
-import * as Crypto from "node:crypto";
-
-import { Effect, FileSystem, Path } from "effect";
-
-export const makeAtomicWriteTempPath = (filePath: string): string =>
-  `${filePath}.${process.pid}.${Crypto.randomUUID()}.tmp`;
+import { Effect, FileSystem, Path, Random } from "effect";
 
 export const writeFileStringAtomically = (input: {
   readonly filePath: string;
   readonly contents: string;
-}) => {
-  const tempPath = makeAtomicWriteTempPath(input.filePath);
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
+}) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempFileId = yield* Random.nextUUIDv4;
+      const targetDirectory = path.dirname(input.filePath);
 
-    yield* fs.makeDirectory(path.dirname(input.filePath), { recursive: true });
-    yield* fs.writeFileString(tempPath, input.contents);
-    yield* fs.rename(tempPath, input.filePath);
-  }).pipe(
-    Effect.ensuring(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.remove(tempPath, { force: true }).pipe(Effect.ignore({ log: true }));
-      }),
-    ),
+      yield* fs.makeDirectory(targetDirectory, { recursive: true });
+      const tempDirectory = yield* fs.makeTempDirectoryScoped({
+        directory: targetDirectory,
+        prefix: `${path.basename(input.filePath)}.`,
+      });
+      const tempPath = path.join(tempDirectory, `${tempFileId}.tmp`);
+
+      yield* fs.writeFileString(tempPath, input.contents);
+      yield* fs.rename(tempPath, input.filePath);
+    }),
   );
-};
