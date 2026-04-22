@@ -26,7 +26,10 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { getModelSelectionOptionValue } from "@t3tools/shared/model";
+import {
+  getModelSelectionBooleanOptionValue,
+  getModelSelectionStringOptionValue,
+} from "@t3tools/shared/model";
 
 import {
   ProviderAdapterRequestError,
@@ -1375,7 +1378,7 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { model: input.modelSelection.model }
             : {}),
           ...(input.modelSelection?.provider === "codex" &&
-          getModelSelectionOptionValue(input.modelSelection, "fastMode") === true
+          getModelSelectionBooleanOptionValue(input.modelSelection, "fastMode") === true
             ? { serviceTier: "fast" }
             : {}),
         };
@@ -1488,25 +1491,26 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     );
 
     const session = yield* requireSession(input.threadId);
+    const reasoningEffort =
+      input.modelSelection?.provider === "codex"
+        ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")
+        : undefined;
+    const fastMode =
+      input.modelSelection?.provider === "codex"
+        ? getModelSelectionBooleanOptionValue(input.modelSelection, "fastMode")
+        : undefined;
     return yield* session.runtime
       .sendTurn({
         ...(input.input !== undefined ? { input: input.input } : {}),
         ...(input.modelSelection?.provider === "codex"
           ? { model: input.modelSelection.model }
           : {}),
-        ...(input.modelSelection?.provider === "codex" &&
-        typeof getModelSelectionOptionValue(input.modelSelection, "reasoningEffort") === "string"
+        ...(reasoningEffort
           ? {
-              effort: getModelSelectionOptionValue(
-                input.modelSelection,
-                "reasoningEffort",
-              ) as EffectCodexSchema.V2TurnStartParams__ReasoningEffort,
+              effort: reasoningEffort as EffectCodexSchema.V2TurnStartParams__ReasoningEffort,
             }
           : {}),
-        ...(input.modelSelection?.provider === "codex" &&
-        getModelSelectionOptionValue(input.modelSelection, "fastMode") === true
-          ? { serviceTier: "fast" }
-          : {}),
+        ...(fastMode === true ? { serviceTier: "fast" } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
         ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
       })

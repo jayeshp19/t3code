@@ -43,7 +43,8 @@ import {
 } from "@t3tools/contracts";
 import {
   applyClaudePromptEffortPrefix,
-  getModelSelectionOptionValue,
+  getModelSelectionBooleanOptionValue,
+  getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
@@ -553,11 +554,10 @@ const CLAUDE_SETTING_SOURCES = [
 ] as const satisfies ReadonlyArray<SettingSource>;
 
 function buildPromptText(input: ProviderSendTurnInput): string {
-  const rawEffortValue =
+  const rawEffort =
     input.modelSelection?.provider === "claudeAgent"
-      ? getModelSelectionOptionValue(input.modelSelection, "effort")
+      ? getModelSelectionStringOptionValue(input.modelSelection, "effort")
       : null;
-  const rawEffort = typeof rawEffortValue === "string" ? rawEffortValue : null;
   const claudeModel =
     input.modelSelection?.provider === "claudeAgent" ? input.modelSelection.model : undefined;
   const caps = getClaudeModelCapabilities(claudeModel);
@@ -2824,9 +2824,8 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
       const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
-      const rawEffort = getModelSelectionOptionValue(modelSelection, "effort");
-      const effort =
-        resolveClaudeEffort(caps, typeof rawEffort === "string" ? rawEffort : undefined) ?? null;
+      const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
+      const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
       const fastModeSupported = descriptors.some(
         (descriptor) => descriptor.type === "boolean" && descriptor.id === "fastMode",
       );
@@ -2834,12 +2833,11 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         (descriptor) => descriptor.type === "boolean" && descriptor.id === "thinking",
       );
       const fastMode =
-        getModelSelectionOptionValue(modelSelection, "fastMode") === true && fastModeSupported;
-      const thinking =
-        typeof getModelSelectionOptionValue(modelSelection, "thinking") === "boolean" &&
-        thinkingSupported
-          ? (getModelSelectionOptionValue(modelSelection, "thinking") as boolean)
-          : undefined;
+        getModelSelectionBooleanOptionValue(modelSelection, "fastMode") === true &&
+        fastModeSupported;
+      const thinking = thinkingSupported
+        ? getModelSelectionBooleanOptionValue(modelSelection, "thinking")
+        : undefined;
       const effectiveEffort = getEffectiveClaudeAgentEffort(effort);
       const runtimeModeToPermission: Record<string, PermissionMode> = {
         "auto-accept-edits": "acceptEdits",

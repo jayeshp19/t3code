@@ -7,7 +7,7 @@ import {
   type OpenCodeModelSelection,
 } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { getModelSelectionOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import { ServerConfig } from "../../config.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -321,18 +321,17 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
           if (!session.data) {
             throw new Error("OpenCode session.create returned no session payload.");
           }
+          const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
+          const selectedVariant = getModelSelectionStringOptionValue(
+            input.modelSelection,
+            "variant",
+          );
 
           const result = await client.session.prompt({
             sessionID: session.data.id,
             model: parsedModel,
-            ...(typeof getModelSelectionOptionValue(input.modelSelection, "agent") === "string"
-              ? { agent: getModelSelectionOptionValue(input.modelSelection, "agent") as string }
-              : {}),
-            ...(typeof getModelSelectionOptionValue(input.modelSelection, "variant") === "string"
-              ? {
-                  variant: getModelSelectionOptionValue(input.modelSelection, "variant") as string,
-                }
-              : {}),
+            ...(selectedAgent ? { agent: selectedAgent } : {}),
+            ...(selectedVariant ? { variant: selectedVariant } : {}),
             parts: [{ type: "text", text: input.prompt }, ...fileParts],
           });
           const info = result.data?.info;

@@ -13,7 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream } from "effect";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
-import { getModelSelectionOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -1147,19 +1147,16 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
 
         const agent =
           input.modelSelection?.provider === PROVIDER
-            ? getModelSelectionOptionValue(input.modelSelection, "agent")
+            ? getModelSelectionStringOptionValue(input.modelSelection, "agent")
             : undefined;
         const variant =
           input.modelSelection?.provider === PROVIDER
-            ? getModelSelectionOptionValue(input.modelSelection, "variant")
+            ? getModelSelectionStringOptionValue(input.modelSelection, "variant")
             : undefined;
-        const selectedAgent = typeof agent === "string" ? agent : undefined;
-        const selectedVariant = typeof variant === "string" ? variant : undefined;
 
         context.activeTurnId = turnId;
-        context.activeAgent =
-          selectedAgent ?? (input.interactionMode === "plan" ? "plan" : undefined);
-        context.activeVariant = selectedVariant;
+        context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
+        context.activeVariant = variant;
         updateProviderSession(
           context,
           {
@@ -1175,7 +1172,7 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
           type: "turn.started",
           payload: {
             model: modelSelection?.model ?? context.session.model,
-            ...(selectedVariant ? { effort: selectedVariant } : {}),
+            ...(variant ? { effort: variant } : {}),
           },
         });
 

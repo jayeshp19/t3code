@@ -36,11 +36,41 @@ export function getProviderOptionSelectionValue(
   return getRawSelectionValueById(selections, id);
 }
 
+export function getProviderOptionStringSelectionValue(
+  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
+  id: string,
+): string | undefined {
+  const value = getProviderOptionSelectionValue(selections, id);
+  return typeof value === "string" ? value : undefined;
+}
+
+export function getProviderOptionBooleanSelectionValue(
+  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
+  id: string,
+): boolean | undefined {
+  const value = getProviderOptionSelectionValue(selections, id);
+  return typeof value === "boolean" ? value : undefined;
+}
+
 export function getModelSelectionOptionValue(
   modelSelection: ModelSelection | null | undefined,
   id: string,
 ): string | boolean | undefined {
   return getProviderOptionSelectionValue(modelSelection?.options, id);
+}
+
+export function getModelSelectionStringOptionValue(
+  modelSelection: ModelSelection | null | undefined,
+  id: string,
+): string | undefined {
+  return getProviderOptionStringSelectionValue(modelSelection?.options, id);
+}
+
+export function getModelSelectionBooleanOptionValue(
+  modelSelection: ModelSelection | null | undefined,
+  id: string,
+): boolean | undefined {
+  return getProviderOptionBooleanSelectionValue(modelSelection?.options, id);
 }
 
 function resolveDescriptorChoiceValue(

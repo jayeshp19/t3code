@@ -6,7 +6,11 @@ import {
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
+  getModelSelectionBooleanOptionValue,
+  getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
+  getProviderOptionBooleanSelectionValue,
+  getProviderOptionStringSelectionValue,
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
   resolveModelSlugForProvider,
@@ -190,5 +194,23 @@ describe("descriptor helpers", () => {
         { id: "fastMode", value: true },
       ],
     });
+  });
+
+  it("reads typed option selection values", () => {
+    const selection = createModelSelection("codex", "gpt-5.4", [
+      { id: "reasoningEffort", value: "high" },
+      { id: "fastMode", value: true },
+    ]);
+
+    expect(getProviderOptionStringSelectionValue(selection.options, "reasoningEffort")).toBe(
+      "high",
+    );
+    expect(getProviderOptionStringSelectionValue(selection.options, "fastMode")).toBeUndefined();
+    expect(getProviderOptionBooleanSelectionValue(selection.options, "fastMode")).toBe(true);
+    expect(
+      getProviderOptionBooleanSelectionValue(selection.options, "reasoningEffort"),
+    ).toBeUndefined();
+    expect(getModelSelectionStringOptionValue(selection, "reasoningEffort")).toBe("high");
+    expect(getModelSelectionBooleanOptionValue(selection, "fastMode")).toBe(true);
   });
 });

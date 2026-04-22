@@ -15,7 +15,11 @@ import type {
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { Cause, Effect, Equal, Exit, Layer, Option, Result, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import {
+  createModelCapabilities,
+  getProviderOptionBooleanSelectionValue,
+  getProviderOptionStringSelectionValue,
+} from "@t3tools/shared/model";
 
 import {
   buildBooleanOptionDescriptor,
@@ -453,22 +457,6 @@ export function resolveCursorAcpBaseModelId(model: string | null | undefined): s
   return base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
 }
 
-function getStringSelection(
-  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
-  id: string,
-): string | undefined {
-  const value = selections?.find((selection) => selection.id === id)?.value;
-  return typeof value === "string" ? value : undefined;
-}
-
-function getBooleanSelection(
-  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
-  id: string,
-): boolean | undefined {
-  const value = selections?.find((selection) => selection.id === id)?.value;
-  return typeof value === "boolean" ? value : undefined;
-}
-
 export function resolveCursorAcpConfigUpdates(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
   selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
@@ -481,7 +469,7 @@ export function resolveCursorAcpConfigUpdates(
 
   const reasoningOption = findCursorEffortConfigOption(configOptions);
   const requestedReasoning = normalizeCursorReasoningValue(
-    getStringSelection(selections, "reasoning"),
+    getProviderOptionStringSelectionValue(selections, "reasoning"),
   );
   if (reasoningOption && requestedReasoning) {
     const value = findCursorSelectOptionValue(reasoningOption, (option) => {
@@ -497,7 +485,7 @@ export function resolveCursorAcpConfigUpdates(
   const contextOption = configOptions.find(
     (option) => option.category === "model_config" && isCursorContextConfigOption(option),
   );
-  const requestedContextWindow = getStringSelection(selections, "contextWindow");
+  const requestedContextWindow = getProviderOptionStringSelectionValue(selections, "contextWindow");
   if (contextOption && requestedContextWindow) {
     const value = findCursorSelectOptionValue(
       contextOption,
@@ -515,7 +503,7 @@ export function resolveCursorAcpConfigUpdates(
   const fastOption = configOptions.find(
     (option) => option.category === "model_config" && isCursorFastConfigOption(option),
   );
-  const requestedFastMode = getBooleanSelection(selections, "fastMode");
+  const requestedFastMode = getProviderOptionBooleanSelectionValue(selections, "fastMode");
   if (fastOption && typeof requestedFastMode === "boolean") {
     const value = findCursorBooleanConfigValue(fastOption, requestedFastMode);
     if (value !== undefined) {
@@ -526,7 +514,7 @@ export function resolveCursorAcpConfigUpdates(
   const thinkingOption = configOptions.find(
     (option) => option.category === "model_config" && isCursorThinkingConfigOption(option),
   );
-  const requestedThinking = getBooleanSelection(selections, "thinking");
+  const requestedThinking = getProviderOptionBooleanSelectionValue(selections, "thinking");
   if (thinkingOption && typeof requestedThinking === "boolean") {
     const value = findCursorBooleanConfigValue(thinkingOption, requestedThinking);
     if (value !== undefined) {

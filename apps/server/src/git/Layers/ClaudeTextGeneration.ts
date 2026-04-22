@@ -28,7 +28,10 @@ import {
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "../Utils.ts";
-import { getModelSelectionOptionValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
+import {
+  getModelSelectionStringOptionValue,
+  getProviderOptionDescriptors,
+} from "@t3tools/shared/model";
 import {
   getClaudeModelCapabilities,
   normalizeClaudeCliEffort,
@@ -94,11 +97,8 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
       selections: modelSelection.options,
     });
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
-    const rawEffortSelection = getModelSelectionOptionValue(modelSelection, "effort");
-    const resolvedEffort = resolveClaudeEffort(
-      caps,
-      typeof rawEffortSelection === "string" ? rawEffortSelection : undefined,
-    );
+    const rawEffortSelection = getModelSelectionStringOptionValue(modelSelection, "effort");
+    const resolvedEffort = resolveClaudeEffort(caps, rawEffortSelection);
     const cliEffort = normalizeClaudeCliEffort(resolvedEffort);
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");

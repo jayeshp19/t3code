@@ -13,7 +13,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import {
   createModelCapabilities,
-  getModelSelectionOptionValue,
+  getModelSelectionStringOptionValue,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
@@ -242,7 +242,7 @@ export function normalizeClaudeCliEffort(effort: string | null | undefined): str
 }
 
 export function resolveClaudeApiModelId(modelSelection: ClaudeModelSelection): string {
-  switch (getModelSelectionOptionValue(modelSelection, "contextWindow")) {
+  switch (getModelSelectionStringOptionValue(modelSelection, "contextWindow")) {
     case "1m":
       return `${modelSelection.model}[1m]`;
     default:
