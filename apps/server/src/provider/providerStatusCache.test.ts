@@ -110,8 +110,8 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
 
       const persistedProvider = yield* readProviderStatusCache(filePath);
       assert.deepStrictEqual(
-        [initialProvider, updatedProvider].some((provider) =>
-          JSON.stringify(provider) === JSON.stringify(persistedProvider),
+        [initialProvider, updatedProvider].some(
+          (provider) => JSON.stringify(provider) === JSON.stringify(persistedProvider),
         ),
         true,
       );

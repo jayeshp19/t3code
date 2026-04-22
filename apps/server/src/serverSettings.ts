@@ -240,6 +240,8 @@ const makeServerSettings = Effect.gen(function* () {
       filePath: settingsPath,
       contents: `${JSON.stringify(sparseSettings, null, 2)}\n`,
     }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, pathService),
       Effect.mapError(
         (cause) =>
           new ServerSettingsError({
