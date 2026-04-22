@@ -212,9 +212,12 @@ export function resolveClaudeEffort(
   caps: ModelCapabilities,
   raw: string | null | undefined,
 ): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
   const descriptors = getProviderOptionDescriptors({
     caps,
-    ...(raw ? { selections: [{ id: "effort", value: raw }] } : {}),
+    selections: [{ id: "effort", value: raw }],
   });
   const effortDescriptor = descriptors.find((descriptor) => descriptor.id === "effort");
   const value = getProviderOptionCurrentValue(effortDescriptor);
