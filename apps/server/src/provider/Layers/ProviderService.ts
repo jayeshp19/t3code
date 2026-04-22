@@ -379,6 +379,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           (persistedBinding?.provider === input.provider
             ? readPersistedCwd(persistedBinding.runtimePayload)
             : undefined);
+        yield* Effect.annotateCurrentSpan({
+          "provider.resume_cursor.source":
+            input.resumeCursor !== undefined
+              ? "request"
+              : effectiveResumeCursor !== undefined && persistedBinding?.provider === input.provider
+                ? "persisted"
+                : "none",
+          "provider.resume_cursor.present": effectiveResumeCursor !== undefined,
+          "provider.cwd.source":
+            input.cwd !== undefined
+              ? "request"
+              : effectiveCwd !== undefined && persistedBinding?.provider === input.provider
+                ? "persisted"
+                : "none",
+          "provider.cwd.effective": effectiveCwd ?? "",
+        });
         const adapter = yield* registry.getByProvider(input.provider);
         const session = yield* adapter.startSession({
           ...input,

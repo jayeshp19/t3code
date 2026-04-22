@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -18,14 +18,23 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Random, Stream } from "effect";
+import { Effect, Fiber, Layer, Logger, Random, References, Stream, Tracer } from "effect";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import type { EffectTraceRecord } from "../../observability/TraceRecord.ts";
+import { makeLocalFileTracer } from "../../observability/LocalFileTracer.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import { ClaudeAdapter } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapterLive, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+
+const readTraceRecords = (tracePath: string): Array<EffectTraceRecord> =>
+  readFileSync(tracePath, "utf8")
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as EffectTraceRecord);
 
 class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   private readonly queue: Array<SDKMessage> = [];
@@ -2595,6 +2604,80 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(createInput?.options.sessionId, undefined);
       assert.equal(createInput?.options.resumeSessionAt, undefined);
     }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("annotates Claude start-session spans with launch cwd and resume parameters", () => {
+    const harness = makeHarness();
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "claude-trace-"));
+    const tracePath = path.join(tempDir, "server.trace.ndjson");
+    const traceLayer = Layer.mergeAll(
+      Layer.effect(
+        Tracer.Tracer,
+        makeLocalFileTracer({
+          filePath: tracePath,
+          maxBytes: 1024 * 1024,
+          maxFiles: 2,
+          batchWindowMs: 10_000,
+        }),
+      ),
+      Logger.layer([Logger.tracerLogger], { mergeWithExisting: false }),
+      Layer.succeed(References.MinimumLogLevel, "Info"),
+    );
+
+    return Effect.gen(function* () {
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => rmSync(tempDir, { recursive: true, force: true })),
+      );
+      const adapter = yield* ClaudeAdapter;
+
+      yield* adapter.startSession({
+        threadId: RESUME_THREAD_ID,
+        provider: "claudeAgent",
+        cwd: "/tmp/claude-trace-worktree",
+        modelSelection: {
+          provider: "claudeAgent",
+          model: "claude-opus-4-6",
+          options: {
+            effort: "max",
+            fastMode: true,
+          },
+        },
+        resumeCursor: {
+          threadId: "resume-thread-trace",
+          resume: "550e8400-e29b-41d4-a716-446655440000",
+          resumeSessionAt: "assistant-trace",
+          turnCount: 7,
+        },
+        runtimeMode: "full-access",
+      });
+
+      yield* Effect.sleep("10 millis");
+
+      const traceRecords = readTraceRecords(tracePath);
+      const startSpan = traceRecords.find(
+        (record) => record.name === "claude-adapter.start-session",
+      );
+      assert.notEqual(startSpan, undefined);
+      if (!startSpan) {
+        return;
+      }
+
+      assert.equal(startSpan.attributes["claude.query.cwd"], "/tmp/claude-trace-worktree");
+      assert.equal(
+        startSpan.attributes["claude.query.resume"],
+        "550e8400-e29b-41d4-a716-446655440000",
+      );
+      assert.equal(startSpan.attributes["claude.resume.source"], "resume-session");
+      assert.equal(startSpan.attributes["claude.resume.thread_id"], "resume-thread-trace");
+      assert.equal(startSpan.attributes["claude.resume.turn_count"], 7);
+      assert.deepEqual(startSpan.attributes["claude.query.additional_directories"], [
+        "/tmp/claude-trace-worktree",
+      ]);
+    }).pipe(
+      Effect.provide(traceLayer),
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );
