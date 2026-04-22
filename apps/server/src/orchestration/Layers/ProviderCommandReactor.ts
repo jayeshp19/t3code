@@ -285,7 +285,7 @@ const make = Effect.gen(function* () {
     const threadProviderCandidate: string = currentProvider ?? thread.modelSelection.instanceId;
     if (!Schema.is(ProviderKind)(threadProviderCandidate)) {
       return yield* new ProviderAdapterRequestError({
-        provider: "codex",
+        provider: threadProviderCandidate,
         method: "thread.turn.start",
         detail: `Thread '${threadId}' references unknown provider driver '${threadProviderCandidate}'. The driver is not installed in this build (rolled-back / fork mismatch).`,
       });

@@ -28,7 +28,7 @@ import {
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "../Utils.ts";
-import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
+import { getModelSelectionOptionValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
 import {
   getClaudeModelCapabilities,
   resolveClaudeApiModelId,
@@ -92,12 +92,13 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
       caps,
       selections: modelSelection.options,
     });
-    const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
-    const rawEffortValue = getProviderOptionCurrentValue(findDescriptor("effort"));
-    const rawEffort = typeof rawEffortValue === "string" ? rawEffortValue : undefined;
-    const resolvedEffort = resolveClaudeEffort(caps, rawEffort);
-    const thinkingDescriptor = findDescriptor("thinking");
-    const fastModeDescriptor = findDescriptor("fastMode");
+    const rawEffort = getModelSelectionOptionValue(modelSelection, "effort");
+    const resolvedEffort = resolveClaudeEffort(
+      caps,
+      typeof rawEffort === "string" ? rawEffort : undefined,
+    );
+    const thinkingDescriptor = descriptors.find((descriptor) => descriptor.id === "thinking");
+    const fastModeDescriptor = descriptors.find((descriptor) => descriptor.id === "fastMode");
     const thinking =
       thinkingDescriptor?.type === "boolean" ? thinkingDescriptor.currentValue : undefined;
     const fastMode =
