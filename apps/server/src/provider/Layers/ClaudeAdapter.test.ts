@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -18,7 +18,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Logger, Random, References, Stream, Tracer } from "effect";
+import { Effect, Fiber, Layer, Random, Stream, Tracer } from "effect";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -28,13 +28,6 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import { ClaudeAdapter } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapterLive, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
-
-const readTraceRecords = (tracePath: string): Array<EffectTraceRecord> =>
-  readFileSync(tracePath, "utf8")
-    .trim()
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as EffectTraceRecord);
 
 class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   private readonly queue: Array<SDKMessage> = [];
@@ -2611,26 +2604,28 @@ describe("ClaudeAdapterLive", () => {
 
   it.effect("annotates Claude start-session spans with launch cwd and resume parameters", () => {
     const harness = makeHarness();
-    const tempDir = mkdtempSync(path.join(os.tmpdir(), "claude-trace-"));
-    const tracePath = path.join(tempDir, "server.trace.ndjson");
-    const traceLayer = Layer.mergeAll(
-      Layer.effect(
-        Tracer.Tracer,
-        makeLocalFileTracer({
-          filePath: tracePath,
-          maxBytes: 1024 * 1024,
-          maxFiles: 2,
-          batchWindowMs: 10_000,
-        }),
-      ),
-      Logger.layer([Logger.tracerLogger], { mergeWithExisting: false }),
-      Layer.succeed(References.MinimumLogLevel, "Info"),
+    const traceRecords: Array<EffectTraceRecord> = [];
+    const traceLayer = Layer.effect(
+      Tracer.Tracer,
+      makeLocalFileTracer({
+        filePath: "/tmp/claude-trace-test.ndjson",
+        maxBytes: 1024 * 1024,
+        maxFiles: 2,
+        batchWindowMs: 10_000,
+        sink: {
+          filePath: "/tmp/claude-trace-test.ndjson",
+          push: (record) => {
+            if (record.type === "effect-span") {
+              traceRecords.push(record);
+            }
+          },
+          flush: Effect.void,
+          close: () => Effect.void,
+        },
+      }),
     );
 
     return Effect.gen(function* () {
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => rmSync(tempDir, { recursive: true, force: true })),
-      );
       const adapter = yield* ClaudeAdapter;
 
       yield* adapter.startSession({
@@ -2654,9 +2649,6 @@ describe("ClaudeAdapterLive", () => {
         runtimeMode: "full-access",
       });
 
-      yield* Effect.sleep("10 millis");
-
-      const traceRecords = readTraceRecords(tracePath);
       const startSpan = traceRecords.find(
         (record) => record.name === "claude-adapter.start-session",
       );
