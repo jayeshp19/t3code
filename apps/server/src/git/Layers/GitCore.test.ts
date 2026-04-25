@@ -1076,6 +1076,130 @@ it.layer(TestLayer)("git integration", (it) => {
     );
 
     it.effect(
+      "skips passive status refresh for slash-named remotes backed by network fetch URLs",
+      () =>
+        Effect.gen(function* () {
+          const remote = yield* makeTmpDir();
+          const source = yield* makeTmpDir();
+          const prefixFetchNamespace = "prefix-my-org";
+          const prefixRemoteName = "my-org";
+          const remoteName = "my-org/upstream";
+          const featureBranch = "feature";
+          yield* git(remote, ["init", "--bare"]);
+
+          yield* initRepoWithCommit(source);
+          const defaultBranch = (yield* (yield* GitCore).listBranches({
+            cwd: source,
+          })).branches.find((branch) => branch.current)!.name;
+          yield* configureRemote(source, prefixRemoteName, remote, prefixFetchNamespace);
+          yield* configureRemote(source, remoteName, remote, remoteName);
+          yield* git(source, ["push", "-u", remoteName, defaultBranch]);
+
+          yield* git(source, ["checkout", "-b", featureBranch]);
+          yield* writeTextFile(path.join(source, "feature.txt"), "feature content\n");
+          yield* git(source, ["add", "feature.txt"]);
+          yield* git(source, ["commit", "-m", "feature commit"]);
+          yield* git(source, ["push", "-u", remoteName, featureBranch]);
+          yield* git(source, ["checkout", defaultBranch]);
+          yield* git(source, ["branch", "-D", featureBranch]);
+          yield* (yield* GitCore).checkoutBranch({
+            cwd: source,
+            branch: `${remoteName}/${featureBranch}`,
+          });
+
+          yield* git(source, [
+            "config",
+            `remote.${remoteName}.url`,
+            "git@github.com:pingdotgg/t3code.git",
+          ]);
+          yield* git(source, ["config", `remote.${remoteName}.pushurl`, remote]);
+
+          const realGitCore = yield* GitCore;
+          let fetchArgs: readonly string[] | null = null;
+          const core = yield* makeIsolatedGitCore((input) => {
+            if (input.args[0] === "--git-dir" && input.args[2] === "fetch") {
+              fetchArgs = [...input.args];
+              return Effect.succeed({
+                code: 0,
+                stdout: "",
+                stderr: "",
+                stdoutTruncated: false,
+                stderrTruncated: false,
+              });
+            }
+            return realGitCore.execute(input);
+          });
+
+          const status = yield* core.statusDetails(source);
+          expect(status.branch).toBe("upstream/feature");
+          expect(status.upstreamRef).toBe(`${remoteName}/${featureBranch}`);
+          expect(fetchArgs).toBeNull();
+        }),
+    );
+
+    it.effect("treats Windows drive-letter fetch URLs as local for slash-named remotes", () =>
+      Effect.gen(function* () {
+        const remote = yield* makeTmpDir();
+        const source = yield* makeTmpDir();
+        const prefixFetchNamespace = "prefix-win";
+        const prefixRemoteName = "win-org";
+        const remoteName = "win-org/upstream";
+        const featureBranch = "feature";
+        yield* git(remote, ["init", "--bare"]);
+
+        yield* initRepoWithCommit(source);
+        const defaultBranch = (yield* (yield* GitCore).listBranches({
+          cwd: source,
+        })).branches.find((branch) => branch.current)!.name;
+        yield* configureRemote(source, prefixRemoteName, remote, prefixFetchNamespace);
+        yield* configureRemote(source, remoteName, remote, remoteName);
+        yield* git(source, ["push", "-u", remoteName, defaultBranch]);
+
+        yield* git(source, ["checkout", "-b", featureBranch]);
+        yield* writeTextFile(path.join(source, "feature.txt"), "feature content\n");
+        yield* git(source, ["add", "feature.txt"]);
+        yield* git(source, ["commit", "-m", "feature commit"]);
+        yield* git(source, ["push", "-u", remoteName, featureBranch]);
+        yield* git(source, ["checkout", defaultBranch]);
+        yield* git(source, ["branch", "-D", featureBranch]);
+        yield* (yield* GitCore).checkoutBranch({
+          cwd: source,
+          branch: `${remoteName}/${featureBranch}`,
+        });
+
+        yield* git(source, ["config", `remote.${remoteName}.url`, "C:/repos/upstream.git"]);
+
+        const realGitCore = yield* GitCore;
+        let fetchArgs: readonly string[] | null = null;
+        const core = yield* makeIsolatedGitCore((input) => {
+          if (input.args[0] === "--git-dir" && input.args[2] === "fetch") {
+            fetchArgs = [...input.args];
+            return Effect.succeed({
+              code: 0,
+              stdout: "",
+              stderr: "",
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            });
+          }
+          return realGitCore.execute(input);
+        });
+
+        const status = yield* core.statusDetails(source);
+        expect(status.branch).toBe("upstream/feature");
+        expect(status.upstreamRef).toBe(`${remoteName}/${featureBranch}`);
+        expect(fetchArgs).toEqual([
+          "--git-dir",
+          path.join(source, ".git"),
+          "fetch",
+          "--quiet",
+          "--no-tags",
+          remoteName,
+        ]);
+      }),
+    );
+
+    it.effect(
       "falls back to detached checkout when --track would conflict with an existing local branch",
       () =>
         Effect.gen(function* () {

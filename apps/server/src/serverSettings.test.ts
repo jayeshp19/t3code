@@ -1,5 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "@t3tools/contracts";
+import {
+  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  DEFAULT_SERVER_SETTINGS,
+  ServerSettings,
+  ServerSettingsPatch,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Schema } from "effect";
@@ -188,6 +193,33 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(next.textGenerationModelSelection, {
         provider: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.provider,
         model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("falls back when git text generation is set to unsupported Pi", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsService;
+
+      yield* serverSettings.updateSettings({
+        providers: {
+          codex: { enabled: true },
+          claudeAgent: { enabled: false },
+          cursor: { enabled: false },
+          opencode: { enabled: false },
+          pi: { enabled: true },
+        },
+        textGenerationModelSelection: {
+          provider: "pi",
+          model: "openai/gpt-5-mini",
+        },
+      });
+
+      const next = yield* serverSettings.getSettings;
+
+      assert.deepEqual(next.textGenerationModelSelection, {
+        provider: "codex",
+        model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );

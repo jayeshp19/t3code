@@ -48,6 +48,22 @@ export function getProviderInteractionModeToggle(
   return getProviderSnapshot(providers, provider)?.showInteractionModeToggle ?? true;
 }
 
+export function shouldOfferPiGlobalAgentDirShortcut(input: {
+  readonly provider: ServerProvider | undefined;
+  readonly agentDir: string | null | undefined;
+  readonly useGlobalAgentDir: boolean;
+}): boolean {
+  return (
+    input.provider?.provider === "pi" &&
+    input.provider.installed &&
+    input.provider.status === "warning" &&
+    input.provider.auth.status === "unauthenticated" &&
+    input.provider.auth.label === "isolated agent dir" &&
+    !input.useGlobalAgentDir &&
+    (input.agentDir?.trim().length ?? 0) === 0
+  );
+}
+
 export function isProviderEnabled(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind,

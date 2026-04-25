@@ -13,8 +13,9 @@
 import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
+  GIT_TEXT_GENERATION_PROVIDER_KINDS,
+  isGitTextGenerationProvider,
   type ModelSelection,
-  type ProviderKind,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -106,23 +107,27 @@ export class ServerSettingsService extends Context.Service<
 
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 
-const PROVIDER_ORDER: readonly ProviderKind[] = ["codex", "claudeAgent", "opencode", "cursor"];
-
 /**
- * Ensure the `textGenerationModelSelection` points to an enabled provider.
- * If the selected provider is disabled, fall back to the first enabled
- * provider with its default model.  This is applied at read-time so the
- * persisted preference is preserved for when a provider is re-enabled.
+ * Ensure the git text generation selection points to a supported, enabled
+ * provider. If the selected provider is unsupported for git writing or
+ * disabled, fall back to the first enabled supported provider. This is
+ * applied at read time so the persisted preference is preserved if the user
+ * later re-enables a supported provider.
  */
 function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
   const selection = settings.textGenerationModelSelection;
-  if (settings.providers[selection.provider].enabled) {
+  if (
+    isGitTextGenerationProvider(selection.provider) &&
+    settings.providers[selection.provider].enabled
+  ) {
     return settings;
   }
 
-  const fallback = PROVIDER_ORDER.find((p) => settings.providers[p].enabled);
+  const fallback = GIT_TEXT_GENERATION_PROVIDER_KINDS.find((provider) => {
+    return settings.providers[provider].enabled;
+  });
   if (!fallback) {
-    // No providers enabled — return as-is; callers will report the error.
+    // No supported providers enabled — return as-is; callers will report the error.
     return settings;
   }
 

@@ -85,6 +85,7 @@ class StatusRemoteRefreshCacheKey extends Data.Class<{
 
 interface ExecuteGitOptions {
   stdin?: string | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
   timeoutMs?: number | undefined;
   allowNonZeroExit?: boolean | undefined;
   fallbackErrorMessage?: string | undefined;
@@ -268,6 +269,34 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
     remotes.set(remoteName, remoteUrl);
   }
   return remotes;
+}
+
+function isLikelyLocalRemoteFetchUrl(remoteUrl: string): boolean {
+  const trimmed = remoteUrl.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  if (/^[a-z]:[\\/]/i.test(trimmed)) {
+    return true;
+  }
+  if (trimmed.startsWith("file://")) {
+    return true;
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return false;
+  }
+  if (/^[^@/\s]+@[^:/\s]+[:/].+/.test(trimmed)) {
+    return false;
+  }
+  if (trimmed.startsWith("~/")) {
+    return true;
+  }
+  if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) {
+    return true;
+  }
+
+  // Plain path-like remotes such as `repo.git` should still count as local.
+  return !trimmed.includes(":");
 }
 
 function parseUpstreamRefWithRemoteNames(
@@ -797,6 +826,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       cwd,
       args,
       ...(options.stdin !== undefined ? { stdin: options.stdin } : {}),
+      ...(options.env !== undefined ? { env: options.env } : {}),
       allowNonZeroExit: true,
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
@@ -917,6 +947,18 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     );
   });
 
+  const resolveRemoteFetchUrl = Effect.fn("resolveRemoteFetchUrl")(function* (
+    cwd: string,
+    remoteName: string,
+  ) {
+    const remoteFetchUrls = yield* runGitStdout(
+      "GitCore.resolveRemoteFetchUrl.listRemoteUrls",
+      cwd,
+      ["remote", "-v"],
+    ).pipe(Effect.map((stdout) => parseRemoteFetchUrls(stdout)));
+    return remoteFetchUrls.get(remoteName) ?? null;
+  });
+
   const fetchRemoteForStatus = (
     gitCommonDir: string,
     remoteName: string,
@@ -928,6 +970,11 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       fetchCwd,
       ["--git-dir", gitCommonDir, "fetch", "--quiet", "--no-tags", remoteName],
       {
+        env: {
+          GCM_INTERACTIVE: "never",
+          GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=2 -o ConnectionAttempts=1",
+          GIT_TERMINAL_PROMPT: "0",
+        },
         allowNonZeroExit: true,
         timeoutMs: Duration.toMillis(STATUS_UPSTREAM_REFRESH_TIMEOUT),
       },
@@ -963,6 +1010,14 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
   ) {
     const upstream = yield* resolveCurrentUpstream(cwd);
     if (!upstream) return;
+    if (upstream.remoteName.includes("/")) {
+      const remoteFetchUrl = yield* resolveRemoteFetchUrl(cwd, upstream.remoteName).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      );
+      // Slash-named remotes are often synthetic aliases for hosted repos; skip passive
+      // status refreshes when their fetch URL points at a network remote.
+      if (!remoteFetchUrl || !isLikelyLocalRemoteFetchUrl(remoteFetchUrl)) return;
+    }
     const gitCommonDir = yield* resolveGitCommonDir(cwd);
     yield* Cache.get(
       statusRemoteRefreshCache,

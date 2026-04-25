@@ -23,6 +23,7 @@ import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter.ts";
 import { makeClaudeAdapterLive } from "./provider/Layers/ClaudeAdapter.ts";
 import { makeCursorAdapterLive } from "./provider/Layers/CursorAdapter.ts";
 import { makeOpenCodeAdapterLive } from "./provider/Layers/OpenCodeAdapter.ts";
+import { makePiAdapterLive } from "./provider/Layers/PiAdapter.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import { makeProviderServiceLive } from "./provider/Layers/ProviderService.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
@@ -44,6 +45,7 @@ import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
+import { PiRuntimeLive } from "./provider/piRuntime.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
 import { RepositoryIdentityResolverLive } from "./project/Layers/RepositoryIdentityResolver.ts";
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
@@ -165,11 +167,14 @@ const ProviderLayerLive = Layer.unwrap(
     const cursorAdapterLayer = makeCursorAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
+    const piAdapterLayer = makePiAdapterLive();
     const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
       Layer.provide(codexAdapterLayer),
       Layer.provide(claudeAdapterLayer),
       Layer.provide(openCodeAdapterLayer),
       Layer.provide(cursorAdapterLayer),
+      Layer.provide(piAdapterLayer),
+      Layer.provide(PiRuntimeLive),
       Layer.provideMerge(ProviderSessionDirectoryLayerLive),
     );
     return makeProviderServiceLive(

@@ -19,6 +19,7 @@ import { ClaudeAdapter } from "../Services/ClaudeAdapter.ts";
 import { CodexAdapter } from "../Services/CodexAdapter.ts";
 import { CursorAdapter } from "../Services/CursorAdapter.ts";
 import { OpenCodeAdapter } from "../Services/OpenCodeAdapter.ts";
+import { PiAdapter } from "../Services/PiAdapter.ts";
 import { createBuiltInAdapterList } from "../builtInProviderCatalog.ts";
 
 export interface ProviderAdapterRegistryLiveOptions {
@@ -36,6 +37,7 @@ const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(fun
           codex: yield* CodexAdapter,
           claudeAgent: yield* ClaudeAdapter,
           opencode: yield* OpenCodeAdapter,
+          pi: yield* PiAdapter,
           ...(cursorAdapterOption._tag === "Some" ? { cursor: cursorAdapterOption.value } : {}),
         });
   const byProvider = new Map(adapters.map((adapter) => [adapter.provider, adapter]));

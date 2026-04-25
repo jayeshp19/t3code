@@ -247,6 +247,7 @@ function makeProviderServiceLayer() {
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter("claudeAgent");
   const cursor = makeFakeCodexAdapter("cursor");
+  const pi = makeFakeCodexAdapter("pi");
   const registry: typeof ProviderAdapterRegistry.Service = {
     getByProvider: (provider) =>
       provider === "codex"
@@ -255,8 +256,10 @@ function makeProviderServiceLayer() {
           ? Effect.succeed(claude.adapter)
           : provider === "cursor"
             ? Effect.succeed(cursor.adapter)
-            : Effect.fail(new ProviderUnsupportedError({ provider })),
-    listProviders: () => Effect.succeed(["codex", "claudeAgent", "cursor"]),
+            : provider === "pi"
+              ? Effect.succeed(pi.adapter)
+              : Effect.fail(new ProviderUnsupportedError({ provider })),
+    listProviders: () => Effect.succeed(["codex", "claudeAgent", "cursor", "pi"]),
   };
 
   const providerAdapterLayer = Layer.succeed(ProviderAdapterRegistry, registry);
@@ -284,6 +287,7 @@ function makeProviderServiceLayer() {
     codex,
     claude,
     cursor,
+    pi,
     layer,
   };
 }
@@ -699,6 +703,75 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.equal(routing.codex.rollbackThread.mock.calls.length, 1);
       const rollbackCall = routing.codex.rollbackThread.mock.calls[0];
       assert.equal(rollbackCall?.[1], 1);
+    }),
+  );
+
+  it.effect("refreshes persisted bindings when Pi rollback replaces the session cursor", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
+
+      const initial = yield* provider.startSession(asThreadId("thread-pi-rollback"), {
+        provider: "pi",
+        threadId: asThreadId("thread-pi-rollback"),
+        cwd: "/tmp/project-pi",
+        runtimeMode: "full-access",
+      });
+
+      routing.pi.rollbackThread.mockImplementationOnce((threadId, _numTurns) =>
+        Effect.sync(() => {
+          routing.pi.updateSession(threadId, (session) => ({
+            ...session,
+            resumeCursor: {
+              opaque: "resume-thread-pi-rollback-replaced",
+            },
+            updatedAt: "2026-04-22T12:00:00.000Z",
+          }));
+          return { threadId, turns: [] };
+        }),
+      );
+
+      yield* provider.rollbackConversation({
+        threadId: initial.threadId,
+        numTurns: 1,
+      });
+
+      const persistedAfterRollback = yield* runtimeRepository.getByThreadId({
+        threadId: initial.threadId,
+      });
+      assert.equal(Option.isSome(persistedAfterRollback), true);
+      if (Option.isSome(persistedAfterRollback)) {
+        assert.deepEqual(persistedAfterRollback.value.resumeCursor, {
+          opaque: "resume-thread-pi-rollback-replaced",
+        });
+      }
+
+      yield* provider.stopSession({ threadId: initial.threadId });
+      routing.pi.startSession.mockClear();
+
+      yield* provider.sendTurn({
+        threadId: initial.threadId,
+        input: "resume with replaced cursor",
+        attachments: [],
+      });
+
+      assert.equal(routing.pi.startSession.mock.calls.length, 1);
+      const resumedStartInput = routing.pi.startSession.mock.calls[0]?.[0];
+      assert.equal(typeof resumedStartInput === "object" && resumedStartInput !== null, true);
+      if (resumedStartInput && typeof resumedStartInput === "object") {
+        const startPayload = resumedStartInput as {
+          readonly provider?: string;
+          readonly resumeCursor?: unknown;
+          readonly threadId?: string;
+        };
+        assert.equal(startPayload.provider, "pi");
+        assert.deepEqual(startPayload.resumeCursor, {
+          opaque: "resume-thread-pi-rollback-replaced",
+        });
+        assert.equal(startPayload.threadId, initial.threadId);
+      }
+
+      yield* provider.stopSession({ threadId: initial.threadId });
     }),
   );
 

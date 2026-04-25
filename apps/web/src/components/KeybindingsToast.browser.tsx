@@ -107,6 +107,14 @@ function createBaseServerConfig(): ServerConfig {
           serverPassword: "",
           customModels: [],
         },
+        pi: {
+          enabled: true,
+          binaryPath: "",
+          sdkRoot: "",
+          agentDir: "",
+          useGlobalAgentDir: false,
+          customModels: [],
+        },
       },
     },
   };

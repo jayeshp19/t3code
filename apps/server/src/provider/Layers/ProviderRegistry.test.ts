@@ -427,6 +427,47 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
         ]);
       });
 
+      it("does not preserve Pi models that disappear from a refreshed auth-scoped snapshot", () => {
+        const previousProvider = {
+          provider: "pi",
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated", type: "pi", label: "global agent dir" },
+          checkedAt: "2026-04-14T00:00:00.000Z",
+          version: "1.2.3",
+          models: [
+            {
+              slug: "openai/gpt-5",
+              name: "GPT-5",
+              subProvider: "openai",
+              isCustom: false,
+              capabilities: createModelCapabilities({
+                optionDescriptors: [
+                  selectDescriptor("thinkingLevel", "Thinking", [
+                    { id: "medium", label: "Medium", isDefault: true },
+                  ]),
+                ],
+              }),
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const refreshedProvider = {
+          ...previousProvider,
+          checkedAt: "2026-04-14T00:01:00.000Z",
+          auth: { status: "unauthenticated", type: "pi", label: "global agent dir" },
+          status: "warning",
+          models: [],
+        } satisfies ServerProvider;
+
+        assert.deepStrictEqual(
+          mergeProviderSnapshot(previousProvider, refreshedProvider).models,
+          [],
+        );
+      });
+
       it.effect("probes enabled providers in the background during registry startup", () =>
         Effect.gen(function* () {
           let spawnCount = 0;
@@ -549,7 +590,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
 
               assert.deepStrictEqual(
                 providers.map((provider) => provider.provider),
-                ["codex", "claudeAgent", "opencode", "cursor"],
+                ["codex", "claudeAgent", "opencode", "cursor", "pi"],
               );
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");

@@ -3,6 +3,7 @@ import type { ServerProvider } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
 import { Effect, FileSystem } from "effect";
+import { vi } from "vitest";
 
 import {
   hydrateCachedProvider,
@@ -73,6 +74,33 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
       assert.deepStrictEqual(yield* readProviderStatusCache(codexPath), codexProvider);
       assert.deepStrictEqual(yield* readProviderStatusCache(claudePath), claudeProvider);
       assert.deepStrictEqual(yield* readProviderStatusCache(openCodePath), openCodeProvider);
+    }),
+  );
+
+  it.effect("uses collision-proof temp paths for concurrent writes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-provider-cache-" });
+      const cachePath = resolveProviderStatusCachePath({
+        cacheDir: tempDir,
+        provider: "opencode",
+      });
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_777_108_196_843);
+
+      yield* Effect.all(
+        Array.from({ length: 12 }, (_, index) =>
+          writeProviderStatusCache({
+            filePath: cachePath,
+            provider: makeProvider("opencode", {
+              checkedAt: `2026-04-11T00:00:${String(index).padStart(2, "0")}.000Z`,
+            }),
+          }),
+        ),
+        { concurrency: "unbounded" },
+      ).pipe(Effect.ensuring(Effect.sync(() => nowSpy.mockRestore())));
+
+      const cachedProvider = yield* readProviderStatusCache(cachePath);
+      assert.equal(cachedProvider?.provider, "opencode");
     }),
   );
 
@@ -157,6 +185,45 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         fallbackProvider: disabledFallback,
       }),
       disabledFallback,
+    );
+  });
+
+  it("does not append stale cached Pi models onto the fallback snapshot", () => {
+    const cachedPi = makeProvider("pi", {
+      models: [
+        {
+          slug: "openai/gpt-5",
+          name: "GPT-5",
+          isCustom: false,
+          capabilities: emptyCapabilities,
+        },
+      ],
+      auth: { status: "authenticated", type: "pi", label: "global agent dir" },
+    });
+    const fallbackPi = makeProvider("pi", {
+      status: "warning",
+      auth: { status: "unauthenticated", type: "pi", label: "isolated agent dir" },
+      models: [],
+      message: "No authenticated Pi models are available.",
+    });
+
+    assert.deepStrictEqual(
+      hydrateCachedProvider({
+        cachedProvider: cachedPi,
+        fallbackProvider: fallbackPi,
+      }),
+      {
+        provider: fallbackPi.provider,
+        enabled: fallbackPi.enabled,
+        models: [],
+        installed: cachedPi.installed,
+        version: cachedPi.version,
+        status: cachedPi.status,
+        auth: cachedPi.auth,
+        checkedAt: cachedPi.checkedAt,
+        slashCommands: cachedPi.slashCommands,
+        skills: cachedPi.skills,
+      },
     );
   });
 });

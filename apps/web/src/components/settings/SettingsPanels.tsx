@@ -11,7 +11,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import {
+  GIT_TEXT_GENERATION_PROVIDER_KINDS,
   type DesktopUpdateChannel,
+  isGitTextGenerationProvider,
   type ScopedThreadRef,
   type ProviderKind,
   type ServerProvider,
@@ -45,6 +47,7 @@ import {
   getCustomModelOptionsByProvider,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
+import { shouldOfferPiGlobalAgentDirShortcut } from "../../providerModels";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -106,6 +109,11 @@ type InstallProviderSettings = {
   badgeLabel?: string;
   binaryPlaceholder: string;
   binaryDescription: ReactNode;
+  sdkRootPlaceholder?: string;
+  sdkRootDescription?: ReactNode;
+  agentDirPlaceholder?: string;
+  agentDirDescription?: ReactNode;
+  showUseGlobalAgentDirToggle?: boolean;
   serverUrlPlaceholder?: string;
   serverUrlDescription?: ReactNode;
   serverPasswordPlaceholder?: string;
@@ -148,6 +156,19 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     serverPasswordPlaceholder: "Server password (optional)",
     serverPasswordDescription:
       "If your OpenCode server requires authentication, enter the password here. NOTE: Stored in plain text on disk",
+  },
+  {
+    provider: "pi",
+    title: "Pi",
+    binaryPlaceholder: "Pi binary path",
+    binaryDescription: "Path to the Pi CLI binary",
+    sdkRootPlaceholder: "/path/to/pi-sdk-runtime",
+    sdkRootDescription:
+      "Optional directory containing node_modules/@mariozechner/pi-* packages. Leave blank to use the SDK bundled with T3 Code.",
+    agentDirPlaceholder: "/path/to/pi/agent",
+    agentDirDescription:
+      "Optional Pi agent directory override. When set, it takes precedence over the global-agent toggle.",
+    showUseGlobalAgentDirToggle: true,
   },
 ] as const;
 
@@ -566,6 +587,14 @@ export function GeneralSettingsPanel() {
         DEFAULT_UNIFIED_SETTINGS.providers.opencode.serverPassword ||
       settings.providers.opencode.customModels.length > 0,
     ),
+    pi: Boolean(
+      settings.providers.pi.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.pi.binaryPath ||
+      settings.providers.pi.sdkRoot !== DEFAULT_UNIFIED_SETTINGS.providers.pi.sdkRoot ||
+      settings.providers.pi.agentDir !== DEFAULT_UNIFIED_SETTINGS.providers.pi.agentDir ||
+      settings.providers.pi.useGlobalAgentDir !==
+        DEFAULT_UNIFIED_SETTINGS.providers.pi.useGlobalAgentDir ||
+      settings.providers.pi.customModels.length > 0,
+    ),
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
@@ -574,6 +603,7 @@ export function GeneralSettingsPanel() {
     claudeAgent: "",
     cursor: "",
     opencode: "",
+    pi: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>
@@ -600,6 +630,10 @@ export function GeneralSettingsPanel() {
   const availableEditors = useServerAvailableEditors();
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
+  const gitTextGenerationProviders = useMemo(
+    () => serverProviders.filter((provider) => isGitTextGenerationProvider(provider.provider)),
+    [serverProviders],
+  );
   const visibleProviderSettings = PROVIDER_SETTINGS.filter(
     (providerSettings) =>
       providerSettings.provider !== "cursor" ||
@@ -619,7 +653,10 @@ export function GeneralSettingsPanel() {
     return exports.length > 0 ? `${mode}. OTLP exporting ${exports.join(" and ")}.` : `${mode}.`;
   })();
 
-  const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
+  const textGenerationModelSelection = resolveAppModelSelectionState(
+    settings,
+    gitTextGenerationProviders,
+  );
   const textGenProvider = textGenerationModelSelection.provider;
   const textGenModel = textGenerationModelSelection.model;
   const textGenModelOptions = textGenerationModelSelection.options;
@@ -628,6 +665,7 @@ export function GeneralSettingsPanel() {
     serverProviders,
     textGenProvider,
     textGenModel,
+    GIT_TEXT_GENERATION_PROVIDER_KINDS,
   );
   const isGitWritingModelDirty = !Equal.equals(
     settings.textGenerationModelSelection ?? null,
@@ -777,14 +815,16 @@ export function GeneralSettingsPanel() {
     const defaultProviderConfig = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
     const statusKey = liveProvider?.status ?? (providerConfig.enabled ? "warning" : "disabled");
     const summary = getProviderSummary(liveProvider);
-    const models: ReadonlyArray<ServerProviderModel> =
-      liveProvider?.models ??
-      providerConfig.customModels.map((slug) => ({
+    const liveModels = liveProvider?.models ?? [];
+    const savedCustomModels = providerConfig.customModels
+      .filter((slug) => !liveModels.some((model) => model.slug === slug))
+      .map((slug) => ({
         slug,
         name: slug,
         isCustom: true,
         capabilities: null,
       }));
+    const models: ReadonlyArray<ServerProviderModel> = [...liveModels, ...savedCustomModels];
 
     return {
       provider: providerSettings.provider,
@@ -792,6 +832,11 @@ export function GeneralSettingsPanel() {
       badgeLabel: providerSettings.badgeLabel,
       binaryPlaceholder: providerSettings.binaryPlaceholder,
       binaryDescription: providerSettings.binaryDescription,
+      sdkRootPlaceholder: providerSettings.sdkRootPlaceholder,
+      sdkRootDescription: providerSettings.sdkRootDescription,
+      agentDirPlaceholder: providerSettings.agentDirPlaceholder,
+      agentDirDescription: providerSettings.agentDirDescription,
+      showUseGlobalAgentDirToggle: providerSettings.showUseGlobalAgentDirToggle,
       serverUrlPlaceholder: providerSettings.serverUrlPlaceholder,
       serverUrlDescription: providerSettings.serverUrlDescription,
       serverPasswordPlaceholder: providerSettings.serverPasswordPlaceholder,
@@ -800,6 +845,16 @@ export function GeneralSettingsPanel() {
       homePlaceholder: providerSettings.homePlaceholder,
       homeDescription: providerSettings.homeDescription,
       binaryPathValue: providerConfig.binaryPath,
+      sdkRootValue: "sdkRoot" in providerConfig ? providerConfig.sdkRoot : "",
+      agentDirValue: "agentDir" in providerConfig ? providerConfig.agentDir : "",
+      useGlobalAgentDir:
+        "useGlobalAgentDir" in providerConfig ? providerConfig.useGlobalAgentDir : false,
+      showUseGlobalAgentDirShortcut: shouldOfferPiGlobalAgentDirShortcut({
+        provider: liveProvider,
+        agentDir: "agentDir" in providerConfig ? providerConfig.agentDir : "",
+        useGlobalAgentDir:
+          "useGlobalAgentDir" in providerConfig ? providerConfig.useGlobalAgentDir : false,
+      }),
       serverUrlValue: "serverUrl" in providerConfig ? providerConfig.serverUrl : "",
       serverPasswordValue: "serverPassword" in providerConfig ? providerConfig.serverPassword : "",
       isDirty: !Equal.equals(providerConfig, defaultProviderConfig),
@@ -1118,7 +1173,7 @@ export function GeneralSettingsPanel() {
                 provider={textGenProvider}
                 model={textGenModel}
                 lockedProvider={null}
-                providers={serverProviders}
+                providers={gitTextGenerationProviders}
                 modelOptionsByProvider={gitModelOptionsByProvider}
                 triggerVariant="outline"
                 triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
@@ -1129,7 +1184,7 @@ export function GeneralSettingsPanel() {
                         ...settings,
                         textGenerationModelSelection: createModelSelection(provider, model),
                       },
-                      serverProviders,
+                      gitTextGenerationProviders,
                     ),
                   });
                 }}
@@ -1158,7 +1213,7 @@ export function GeneralSettingsPanel() {
                           nextOptions,
                         ),
                       },
-                      serverProviders,
+                      gitTextGenerationProviders,
                     ),
                   });
                 }}
@@ -1252,6 +1307,26 @@ export function GeneralSettingsPanel() {
                     </p>
                   </div>
                   <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+                    {providerCard.showUseGlobalAgentDirShortcut ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={() =>
+                          updateSettings({
+                            providers: {
+                              ...settings.providers,
+                              pi: {
+                                ...settings.providers.pi,
+                                useGlobalAgentDir: true,
+                              },
+                            },
+                          })
+                        }
+                      >
+                        Use global Pi agent dir
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -1341,6 +1416,112 @@ export function GeneralSettingsPanel() {
                         </span>
                       </label>
                     </div>
+
+                    {providerCard.sdkRootPlaceholder ? (
+                      <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                        <label
+                          htmlFor={`provider-install-${providerCard.provider}-sdk-root`}
+                          className="block"
+                        >
+                          <span className="text-xs font-medium text-foreground">
+                            {providerDisplayName} SDK root
+                          </span>
+                          <Input
+                            id={`provider-install-${providerCard.provider}-sdk-root`}
+                            className="mt-1.5"
+                            value={providerCard.sdkRootValue}
+                            onChange={(event) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  [providerCard.provider]: {
+                                    ...settings.providers[providerCard.provider],
+                                    ...(providerCard.provider === "pi"
+                                      ? { sdkRoot: event.target.value }
+                                      : {}),
+                                  },
+                                },
+                              })
+                            }
+                            placeholder={providerCard.sdkRootPlaceholder}
+                            spellCheck={false}
+                          />
+                          {providerCard.sdkRootDescription ? (
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              {providerCard.sdkRootDescription}
+                            </span>
+                          ) : null}
+                        </label>
+                      </div>
+                    ) : null}
+
+                    {providerCard.agentDirPlaceholder ? (
+                      <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                        <label
+                          htmlFor={`provider-install-${providerCard.provider}-agent-dir`}
+                          className="block"
+                        >
+                          <span className="text-xs font-medium text-foreground">
+                            {providerDisplayName} agent directory
+                          </span>
+                          <Input
+                            id={`provider-install-${providerCard.provider}-agent-dir`}
+                            className="mt-1.5"
+                            value={providerCard.agentDirValue}
+                            onChange={(event) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  [providerCard.provider]: {
+                                    ...settings.providers[providerCard.provider],
+                                    ...(providerCard.provider === "pi"
+                                      ? { agentDir: event.target.value }
+                                      : {}),
+                                  },
+                                },
+                              })
+                            }
+                            placeholder={providerCard.agentDirPlaceholder}
+                            spellCheck={false}
+                          />
+                          {providerCard.agentDirDescription ? (
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              {providerCard.agentDirDescription}
+                            </span>
+                          ) : null}
+                        </label>
+                      </div>
+                    ) : null}
+
+                    {providerCard.showUseGlobalAgentDirToggle ? (
+                      <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-foreground">
+                              Use global Pi agent directory
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Reuse `~/.pi/agent` instead of T3 Code's isolated Pi home.
+                            </div>
+                          </div>
+                          <Switch
+                            checked={providerCard.useGlobalAgentDir}
+                            onCheckedChange={(checked) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  pi: {
+                                    ...settings.providers.pi,
+                                    useGlobalAgentDir: Boolean(checked),
+                                  },
+                                },
+                              })
+                            }
+                            aria-label="Use global Pi agent directory"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
 
                     {providerCard.serverUrlPlaceholder ? (
                       <div className="border-t border-border/60 px-4 py-3 sm:px-5">
@@ -1612,7 +1793,9 @@ export function GeneralSettingsPanel() {
                               ? "gpt-6.7-codex-ultra-preview"
                               : providerCard.provider === "opencode"
                                 ? "openai/gpt-5"
-                                : "claude-sonnet-5-0"
+                                : providerCard.provider === "pi"
+                                  ? "openai/gpt-5"
+                                  : "claude-sonnet-5-0"
                           }
                           spellCheck={false}
                         />

@@ -46,6 +46,12 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   const handleProviderClick = (provider: ProviderKind | "favorites") => {
     props.onSelectProvider(provider);
   };
+  const providers = props.providers;
+  const providerOptions = providers
+    ? AVAILABLE_PROVIDER_OPTIONS.filter((option) =>
+        providers.some((provider) => provider.provider === option.value),
+      )
+    : AVAILABLE_PROVIDER_OPTIONS;
 
   return (
     <div className="flex flex-col w-12 border-r bg-muted/30  p-1 overflow-y-auto gap-1">
@@ -82,7 +88,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
       </div>
 
       {/* Provider buttons */}
-      {AVAILABLE_PROVIDER_OPTIONS.map((option) => {
+      {providerOptions.map((option) => {
         const OptionIcon = PROVIDER_ICON_BY_PROVIDER[option.value];
         const liveProvider = props.providers
           ? getProviderSnapshot(props.providers, option.value)

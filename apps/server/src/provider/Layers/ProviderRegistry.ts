@@ -11,18 +11,22 @@ import { ClaudeProviderLive } from "./ClaudeProvider.ts";
 import { CodexProviderLive } from "./CodexProvider.ts";
 import { CursorProviderLive } from "./CursorProvider.ts";
 import { OpenCodeProviderLive } from "./OpenCodeProvider.ts";
+import { PiProviderLive } from "./PiProvider.ts";
 import { ClaudeProvider } from "../Services/ClaudeProvider.ts";
 import { CodexProvider } from "../Services/CodexProvider.ts";
 import { CursorProvider } from "../Services/CursorProvider.ts";
 import { OpenCodeProvider } from "../Services/OpenCodeProvider.ts";
+import { PiProvider } from "../Services/PiProvider.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
+import { PiRuntimeLive } from "../piRuntime.ts";
 import {
   hydrateCachedProvider,
   PROVIDER_CACHE_IDS,
   orderProviderSnapshots,
   readProviderStatusCache,
   resolveProviderStatusCachePath,
+  shouldRetainMissingModelsForProvider,
   writeProviderStatusCache,
 } from "../providerStatusCache.ts";
 import { createBuiltInProviderSources } from "../builtInProviderCatalog.ts";
@@ -39,10 +43,15 @@ const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean 
   (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
 const mergeProviderModels = (
+  provider: ServerProvider["provider"],
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  if (nextModels.length === 0 && previousModels.length > 0) {
+  if (
+    shouldRetainMissingModelsForProvider(provider) &&
+    nextModels.length === 0 &&
+    previousModels.length > 0
+  ) {
     return previousModels;
   }
 
@@ -58,7 +67,9 @@ const mergeProviderModels = (
     };
   });
   const nextSlugs = new Set(nextModels.map((model) => model.slug));
-  return [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))];
+  return shouldRetainMissingModelsForProvider(provider)
+    ? [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))]
+    : mergedModels;
 };
 
 export const mergeProviderSnapshot = (
@@ -69,7 +80,11 @@ export const mergeProviderSnapshot = (
     ? nextProvider
     : {
         ...nextProvider,
-        models: mergeProviderModels(previousProvider.models, nextProvider.models),
+        models: mergeProviderModels(
+          nextProvider.provider,
+          previousProvider.models,
+          nextProvider.models,
+        ),
       };
 
 export const haveProvidersChanged = (
@@ -83,6 +98,7 @@ const ProviderRegistryLiveBase = Layer.effect(
     const codexProvider = yield* CodexProvider;
     const claudeProvider = yield* ClaudeProvider;
     const openCodeProvider = yield* OpenCodeProvider;
+    const piProvider = yield* PiProvider;
     const config = yield* ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -94,6 +110,7 @@ const ProviderRegistryLiveBase = Layer.effect(
       claudeAgent: claudeProvider,
       opencode: openCodeProvider,
       cursor: cursorProvider,
+      pi: piProvider,
     }) satisfies ReadonlyArray<ProviderSnapshotSource>;
     const activeProviders = PROVIDER_CACHE_IDS;
     const changesPubSub = yield* Effect.acquireRelease(
@@ -260,6 +277,8 @@ export const ProviderRegistryLive = Layer.unwrap(
       Layer.provideMerge(ClaudeProviderLive),
       Layer.provideMerge(OpenCodeProviderLive),
       Layer.provideMerge(OpenCodeRuntimeLive),
+      Layer.provideMerge(PiProviderLive),
+      Layer.provideMerge(PiRuntimeLive),
     ),
   ),
 );

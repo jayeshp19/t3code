@@ -219,6 +219,36 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
   }),
 );
 
+it.effect("accepts Pi model selections with provider/modelId slugs and thinking levels", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadTurnStartCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-pi",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-pi",
+        role: "user",
+        text: "hello",
+        attachments: [],
+      },
+      modelSelection: {
+        provider: "pi",
+        model: " openai/gpt-5 ",
+        options: {
+          thinkingLevel: "high",
+        },
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.modelSelection?.provider, "pi");
+    assert.strictEqual(parsed.modelSelection?.model, "openai/gpt-5");
+    assert.deepStrictEqual(parsed.modelSelection?.options, {
+      thinkingLevel: "high",
+    });
+  }),
+);
+
 it.effect("accepts bootstrap metadata in thread.turn.start", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadTurnStartCommand({

@@ -133,32 +133,25 @@ export function getCustomModelOptionsByProvider(
   providers: ReadonlyArray<ServerProvider>,
   selectedProvider?: ProviderKind | null,
   selectedModel?: string | null,
+  allowedProviders?: ReadonlyArray<ProviderKind>,
 ): Record<ProviderKind, ReadonlyArray<ModelEsque>> {
+  const allowedProviderSet = allowedProviders ? new Set(allowedProviders) : null;
+  const getOptionsForProvider = (provider: ProviderKind): ReadonlyArray<ModelEsque> =>
+    allowedProviderSet && !allowedProviderSet.has(provider)
+      ? []
+      : getAppModelOptions(
+          settings,
+          providers,
+          provider,
+          selectedProvider === provider ? selectedModel : undefined,
+        );
+
   return {
-    codex: getAppModelOptions(
-      settings,
-      providers,
-      "codex",
-      selectedProvider === "codex" ? selectedModel : undefined,
-    ),
-    claudeAgent: getAppModelOptions(
-      settings,
-      providers,
-      "claudeAgent",
-      selectedProvider === "claudeAgent" ? selectedModel : undefined,
-    ),
-    cursor: getAppModelOptions(
-      settings,
-      providers,
-      "cursor",
-      selectedProvider === "cursor" ? selectedModel : undefined,
-    ),
-    opencode: getAppModelOptions(
-      settings,
-      providers,
-      "opencode",
-      selectedProvider === "opencode" ? selectedModel : undefined,
-    ),
+    codex: getOptionsForProvider("codex"),
+    claudeAgent: getOptionsForProvider("claudeAgent"),
+    cursor: getOptionsForProvider("cursor"),
+    opencode: getOptionsForProvider("opencode"),
+    pi: getOptionsForProvider("pi"),
   };
 }
 

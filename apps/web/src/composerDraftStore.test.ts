@@ -121,7 +121,7 @@ function resetComposerDraftStore() {
 }
 
 function modelSelection(
-  provider: "codex" | "claudeAgent" | "cursor",
+  provider: ModelSelection["provider"],
   model: string,
   options?: Record<string, string | boolean | undefined>,
 ): ModelSelection {
@@ -1254,6 +1254,23 @@ describe("composerDraftStore sticky composer settings", () => {
       modelSelection("cursor", "gpt-5.4"),
     );
     expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("cursor");
+  });
+
+  it("stores Pi thinking levels in sticky model selections", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setStickyModelSelection(
+      modelSelection("pi", "openai/gpt-5", {
+        thinkingLevel: "high",
+      }),
+    );
+
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider.pi).toEqual(
+      modelSelection("pi", "openai/gpt-5", {
+        thinkingLevel: "high",
+      }),
+    );
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("pi");
   });
 
   it("applies sticky activeProvider to new drafts", () => {

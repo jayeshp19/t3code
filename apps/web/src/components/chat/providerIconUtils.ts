@@ -7,6 +7,7 @@ export const PROVIDER_ICON_BY_PROVIDER: Record<ProviderKind, Icon> = {
   claudeAgent: ClaudeAI,
   opencode: OpenCodeIcon,
   cursor: CursorIcon,
+  pi: OpenAI,
 };
 
 function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): option is {

@@ -130,12 +130,33 @@ export const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
   claudeAgent: "claude-sonnet-4-6",
   cursor: "auto",
   opencode: "openai/gpt-5",
+  pi: "openai/gpt-5",
 };
 
 export const DEFAULT_MODEL = DEFAULT_MODEL_BY_PROVIDER.codex;
 
 /** Per-provider text generation model defaults. */
-export const DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
+export const GIT_TEXT_GENERATION_PROVIDER_KINDS = [
+  "codex",
+  "claudeAgent",
+  "opencode",
+  "cursor",
+] as const;
+export type GitTextGenerationProviderKind = (typeof GIT_TEXT_GENERATION_PROVIDER_KINDS)[number];
+
+export function isGitTextGenerationProvider(
+  provider: string | null | undefined,
+): provider is GitTextGenerationProviderKind {
+  return (
+    typeof provider === "string" &&
+    (GIT_TEXT_GENERATION_PROVIDER_KINDS as ReadonlyArray<string>).includes(provider)
+  );
+}
+
+export const DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER: Record<
+  GitTextGenerationProviderKind,
+  string
+> = {
   codex: "gpt-5.4-mini",
   claudeAgent: "claude-haiku-4-5",
   cursor: "composer-2",
@@ -179,6 +200,7 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Record<ProviderKind, Record<string,
     "opus-4.5": "claude-opus-4-5",
   },
   opencode: {},
+  pi: {},
 };
 
 // ── Provider display names ────────────────────────────────────────────
@@ -188,4 +210,5 @@ export const PROVIDER_DISPLAY_NAMES: Record<ProviderKind, string> = {
   claudeAgent: "Claude",
   cursor: "Cursor",
   opencode: "OpenCode",
+  pi: "Pi",
 };

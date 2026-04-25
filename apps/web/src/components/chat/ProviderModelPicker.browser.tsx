@@ -345,6 +345,47 @@ describe("ProviderModelPicker", () => {
     }
   });
 
+  it("only renders providers supplied by the caller in the sidebar", async () => {
+    const mounted = await mountPicker({
+      provider: "claudeAgent",
+      model: "claude-opus-4-6",
+      lockedProvider: null,
+    });
+
+    try {
+      await page.getByRole("button").click();
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-model-picker-provider="codex"]')).not.toBeNull();
+        expect(document.querySelector('[data-model-picker-provider="claudeAgent"]')).not.toBeNull();
+        expect(document.querySelector('[data-model-picker-provider="pi"]')).toBeNull();
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("renders no provider buttons when the caller passes an empty provider list", async () => {
+    const mounted = await mountPicker({
+      provider: "claudeAgent",
+      model: "claude-opus-4-6",
+      lockedProvider: null,
+      providers: [],
+    });
+
+    try {
+      await page.getByRole("button").click();
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-model-picker-provider="codex"]')).toBeNull();
+        expect(document.querySelector('[data-model-picker-provider="claudeAgent"]')).toBeNull();
+        expect(document.querySelector('[data-model-picker-provider="pi"]')).toBeNull();
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("filters models by selected provider in sidebar", async () => {
     const mounted = await mountPicker({
       provider: "claudeAgent",
@@ -455,6 +496,7 @@ describe("ProviderModelPicker", () => {
       codex: [{ slug: "gpt-5-codex", name: "GPT-5 Codex" }],
       cursor: [],
       opencode: [],
+      pi: [],
     } as const;
     const screen = await render(
       <ProviderModelPicker
